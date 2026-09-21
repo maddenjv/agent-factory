@@ -1,0 +1,44 @@
+# Two things live here:
+#   dolt  - the single Beads database server all agents share (server mode = concurrent writers)
+#   agent - the image every role runs; started per-role by bin/start.sh via `docker compose run`
+services:
+  dolt:
+    image: dolthub/dolt-sql-server:latest
+    container_name: factory-dolt
+    restart: unless-stopped
+    environment:
+      DOLT_ROOT_HOST: "%"          # allow root from other containers; NOT published to the host
+    volumes:
+      - ./data/dolt:/var/lib/dolt
+    networks: [factory]
+
+  agent:
+    build:
+      context: ./docker
+      args:
+        UID: ${HOST_UID:-1000}
+        GID: ${HOST_GID:-1000}
+    image: factory-agent:latest
+    profiles: ["agents"]
+    env_file: .env
+    environment:
+      ROLE: ${ROLE:-shell}
+    init: true
+    depends_on: [dolt]
+    networks: [factory]
+    volumes:
+      - ./data/origin.git:/origin.git
+      - ./data/workspaces/${ROLE:-shell}:/work/repo
+      - ./data/logs:/work/logs
+      - ./data/control:/work/control
+      - ./data/claude/${ROLE:-shell}:/home/agent/.claude
+      - ./agents:/work/agents:ro
+      - ./bin:/work/bin:ro
+    # Container hardening. Nothing else is mounted: no docker socket, no ~/.ssh, no home dir.
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 512
+    mem_limit: 6g
+
+networks:
+  factory: {}
