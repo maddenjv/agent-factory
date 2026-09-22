@@ -20,9 +20,16 @@ services:
     image: dolthub/dolt-sql-server:latest
     container_name: factory-dolt
     restart: unless-stopped
+    # dolthub/dolt-sql-server runs as root by default, so without this every file it writes into
+    # the bind mount below would be root-owned on the host - not removable from your own terminal
+    # without sudo. Running as your own uid/gid avoids that; HOME must then point somewhere that
+    # uid can actually write (root's home, "/", isn't), since dolt keeps a small global config
+    # there too, alongside its per-project data.
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     environment:
       DOLT_ROOT_HOST: "%"          # allow root from other containers, and from the loopback
                                     # publish below; still has no password (see README)
+      HOME: /var/lib/dolt
     volumes:
       - ${PROJECT_DIR}/.agent-factory/dolt:/var/lib/dolt
     ports:
