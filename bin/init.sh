@@ -11,6 +11,7 @@ if [ ! -f "$KIT_DIR/.env" ]; then
   exit 1
 fi
 grep -q '^HOST_UID=' "$KIT_DIR/.env" || { echo "HOST_UID=$(id -u)" >> "$KIT_DIR/.env"; echo "HOST_GID=$(id -g)" >> "$KIT_DIR/.env"; }
+grep -q '^CONTAINER_HOME=' "$KIT_DIR/.env" || echo "CONTAINER_HOME=/home/john" >> "$KIT_DIR/.env"
 
 # Checked here, before anything below creates .agent-factory/ (which would otherwise make this
 # repo look "dirty" to the same check). bin/init-project.sh commits scaffolding directly to main

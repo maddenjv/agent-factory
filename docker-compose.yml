@@ -66,12 +66,15 @@ services:
       # works in a copy of this under .agent-factory/workspaces/<role>; only the reviewer's
       # merge-to-main push touches this checkout directly (see bin/init.sh's updateInstead).
       - ${PROJECT_DIR}:${PROJECT_DIR}
-      - ${PROJECT_DIR}/.agent-factory/claude/${ROLE:-shell}:/home/john/.claude
-      - ${HOME}/.claude:/home/john/.claude-host:ro
-      - ai-dev-kit:/home/john/.ai-dev-kit
-      - ${HOME}/.ai-dev-kit:/home/john/.ai-dev-kit-host:ro
-      - agents-home:/home/john/.agents
-      - ${HOME}/.agents:/home/john/.agents-host:ro
+      # CONTAINER_HOME is populated into .env by bin/init.sh (mirroring HOST_UID/HOST_GID) and
+      # must match the image's actual account home - see bin/init.sh and agent-loop.sh's own
+      # comment on sync_configs() for why the default can't just be changed freely.
+      - ${PROJECT_DIR}/.agent-factory/claude/${ROLE:-shell}:${CONTAINER_HOME:-/home/john}/.claude
+      - ${HOME}/.claude:${CONTAINER_HOME:-/home/john}/.claude-host:ro
+      - ai-dev-kit:${CONTAINER_HOME:-/home/john}/.ai-dev-kit
+      - ${HOME}/.ai-dev-kit:${CONTAINER_HOME:-/home/john}/.ai-dev-kit-host:ro
+      - agents-home:${CONTAINER_HOME:-/home/john}/.agents
+      - ${HOME}/.agents:${CONTAINER_HOME:-/home/john}/.agents-host:ro
     # Container hardening: no docker socket, no ~/.ssh, no other home-dir contents. The
     # deliberate exceptions above are ~/.claude, ~/.ai-dev-kit and ~/.agents, each mounted
     # read-only so agent-loop.sh can copy them into this role's own writable volume/config at
