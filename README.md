@@ -43,11 +43,12 @@ API key or token needed by default.
   time starts clean.
 
 **`.env` resolution**: if `<project>/.agent-factory/.env` exists, that's the only `.env` used for
-that project. Otherwise it falls back to `KIT_DIR/.env`. The two are never merged — whichever one
-is in effect supplies all settings for that run, so a project `.env` that only sets a few
-variables won't quietly inherit the rest from the kit-level file. Running more than one project
-from the same kit checkout? Give each project its own `<project>/.agent-factory/.env` so their
-settings (model choice, budget caps, notification URL, etc.) don't leak into each other.
+that project. Otherwise it falls back to `KIT_DIR/.env`. It's always one or the other, not
+merged — whichever one is in effect supplies all settings for that run, so a project `.env` that
+only sets a few variables won't quietly inherit the rest from the kit-level file. Running more
+than one project from the same kit checkout? Give each project its own
+`<project>/.agent-factory/.env` so their settings (model choice, budget caps, notification URL,
+etc.) don't leak into each other.
 
 ```bash
 cd ~/path/to/your/project    # NOT this kit's directory - this is the repo agents will work on
