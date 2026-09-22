@@ -76,6 +76,11 @@ an agent after N consecutive failed sessions and alerts; daily spend cap (`DAILY
 STOP flags; startup preflight (bd reachable, credentials work); clean git slate every session, so unpushed work
 is discarded.
 
+Hitting your Claude Code plan's usage limit is treated separately from a real failure: it never counts
+against the per-issue attempt cap or the circuit breaker, at startup (preflight) or mid-issue. The agent
+parses a reset time when the CLI reports one and sleeps until then; otherwise it polls every
+`QUOTA_RETRY_INTERVAL` (default 900s) and keeps retrying the same issue indefinitely.
+
 ## Security notes
 - The container is the only thing between the agent and your machine. Nothing sensitive is mounted (no docker
   socket, `~/.ssh`, or home). Keep it that way. A `CLAUDE_CODE_OAUTH_TOKEN` shares your plan's usage limits

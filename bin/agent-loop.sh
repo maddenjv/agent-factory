@@ -25,6 +25,7 @@ MAX_CONSECUTIVE_FAILURES="${MAX_CONSECUTIVE_FAILURES:-3}"
 WIP_LIMIT="${WIP_LIMIT:-2}"
 DAILY_BUDGET_USD="${DAILY_BUDGET_USD:-}"
 PREFLIGHT="${PREFLIGHT:-1}"
+QUOTA_RETRY_INTERVAL="${QUOTA_RETRY_INTERVAL:-900}"  # fallback poll interval when a reset time can't be parsed
 model_var="MODEL_${ROLE^^}"
 MODEL="${!model_var:-}"
 
@@ -82,6 +83,33 @@ wip_ok() { [ "$ROLE" != "po" ] || [ "$(in_flight)" -lt "$WIP_LIMIT" ] 2>/dev/nul
 spent_today() { cat "$CONTROL"/cost/*."$(date +%F)" 2>/dev/null | awk '{s+=$1} END{printf "%.2f", s+0}'; }
 budget_ok()   { [ -z "$DAILY_BUDGET_USD" ] || awk -v s="$(spent_today)" -v b="$DAILY_BUDGET_USD" 'BEGIN{exit !(s<b)}'; }
 
+# ---------- usage limits ----------
+# Claude Code plan usage limits (not $DAILY_BUDGET_USD, which is our own spend cap) are a
+# temporary, external condition, not a bug in the issue or the agent's work on it - so hitting
+# one must never count as a failed attempt (record_failure/MAX_ATTEMPTS_PER_ISSUE) or trip the
+# consecutive-failure circuit breaker. Detected by text match since the CLI reports this as a
+# plain diagnostic line, not a structured stream-json error.
+quota_hit_message() {  # quota_hit_message FILE... -> first matching line, or empty
+  grep -ihEo 'hit your [a-z]+ limit[^"]*|usage limit[^"]*|rate limit exceeded[^"]*' "$@" 2>/dev/null | head -1
+}
+
+usage_limit_wait_seconds() {  # usage_limit_wait_seconds "<message text>" -> seconds to sleep
+  local msg="$1" h m ap now epoch wait
+  if [[ "$msg" =~ [Rr]esets?\ ([0-9]{1,2}):([0-9]{2})\ *([AaPp][Mm])\ *\(UTC\) ]]; then
+    h="${BASH_REMATCH[1]}"; m="${BASH_REMATCH[2]}"; ap="${BASH_REMATCH[3],,}"
+    [ "$ap" = pm ] && [ "$h" -ne 12 ] && h=$((h+12))
+    [ "$ap" = am ] && [ "$h" -eq 12 ] && h=0
+    now=$(date -u +%s)
+    epoch=$(date -u -d "today $h:$m" +%s 2>/dev/null) || epoch=""
+    if [ -n "$epoch" ]; then
+      [ "$epoch" -le "$now" ] && epoch=$((epoch + 86400))  # already passed today -> tomorrow
+      wait=$((epoch - now + 60))                            # +60s buffer past the reset
+      if [ "$wait" -gt 0 ] && [ "$wait" -le 86400 ]; then echo "$wait"; return; fi
+    fi
+  fi
+  echo "$QUOTA_RETRY_INTERVAL"   # couldn't parse a reset time - poll instead
+}
+
 # ---------- git ----------
 sync_repo() {  # clean slate each iteration: anything not committed AND pushed does not survive
   git -C "$REPO" fetch -q --prune origin || return 1
@@ -107,16 +135,20 @@ build_prompt() {
   printf '\n\n---\nYour assigned issue: %s\nRepository: %s (your own clone; remote "origin"). Shared conventions are in CLAUDE.md.\nStart with: bd show %s\n' "$1" "$REPO" "$1"
 }
 
-run_agent() {
-  local id=$1 logfile cost
+run_agent() {  # sets LAST_RUN_QUOTA_MSG (empty unless this run hit a usage limit)
+  local id=$1 logfile errfile cost
   logfile="$LOGDIR/$(date +%F).$id.jsonl"
+  errfile=$(mktemp)
   local args=(-p "$(build_prompt "$id")" --dangerously-skip-permissions --max-turns "$MAX_TURNS"
               --output-format stream-json --verbose)
   [ -n "$MODEL" ] && args+=(--model "$MODEL")
-  ( cd "$REPO" && timeout "$ITERATION_TIMEOUT" claude "${args[@]}" 2>>"$LOGDIR/claude-err.log" ) \
+  ( cd "$REPO" && timeout "$ITERATION_TIMEOUT" claude "${args[@]}" 2>"$errfile" ) \
     | tee -a "$logfile" | jq -R -r --unbuffered "$RENDER" 2>/dev/null
   cost=$(jq -rs '[.[] | select(.type=="result")] | last | .total_cost_usd // 0' "$logfile" 2>/dev/null)
   echo "${cost:-0}" >> "$CONTROL/cost/$ROLE.$(date +%F)"
+  cat "$errfile" >> "$LOGDIR/claude-err.log"
+  LAST_RUN_QUOTA_MSG=$(quota_hit_message "$logfile" "$errfile")
+  rm -f "$errfile"
 }
 
 # ---------- outcome handling ----------
@@ -186,8 +218,19 @@ cd "$REPO" || exit 3
 
 if [ "$PREFLIGHT" = 1 ]; then
   bd ready --json >/dev/null 2>&1 || { alert "preflight: bd cannot reach the Beads database"; exit 3; }
-  timeout 180 claude -p "Reply with the single word OK." --dangerously-skip-permissions --max-turns 1 >/dev/null 2>&1 \
-    || { alert "preflight: claude failed to run (check API key/token)"; exit 3; }
+  while :; do
+    preflight_out=$(timeout 180 claude -p "Reply with the single word OK." --dangerously-skip-permissions --max-turns 1 2>&1)
+    [ $? -eq 0 ] && break
+    preflight_hit=$(quota_hit_message <(printf '%s' "$preflight_out"))
+    if [ -n "$preflight_hit" ]; then
+      wait_s=$(usage_limit_wait_seconds "$preflight_hit")
+      alert "preflight: usage limit hit ($preflight_hit); waiting ${wait_s}s before retrying startup"
+      sleep "$wait_s"
+      continue
+    fi
+    alert "preflight: claude failed to run (check API key/token): ${preflight_out:0:200}"
+    exit 3
+  done
 fi
 
 release_stale
@@ -218,6 +261,14 @@ while :; do
 
   log "START $id: $(issue_field "$id" title)"
   run_agent "$id"
+
+  if [ -n "$LAST_RUN_QUOTA_MSG" ]; then
+    wait_s=$(usage_limit_wait_seconds "$LAST_RUN_QUOTA_MSG")
+    bd update "$id" --status open >/dev/null 2>&1   # release for retry; stays assigned to us
+    alert "$id: usage limit hit ($LAST_RUN_QUOTA_MSG); waiting ${wait_s}s to retry - not counted as a failed attempt"
+    sleep "$wait_s"
+    continue
+  fi
 
   if handle_outcome "$id"; then
     fails=0; rm -f "$STATE/attempts.$id"
