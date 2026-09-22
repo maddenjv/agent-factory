@@ -14,5 +14,5 @@ Your issue is `stage:implement` or `stage:rework`. Check out `story/<story-id>` 
 The issue describes a defect found by QA or the reviewer. Reproduce it, fix it with a regression test, run the full
 suite, push.
 
-Finish: everything committed and pushed, full suite green, note on the issue summarising what changed, close it.
+Finish: everything committed and pushed, full suite green, `bd comment` summarising what changed, close it.
 If you cannot get the suite green after a genuine effort, `needs-human` with what you tried.

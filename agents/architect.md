@@ -16,6 +16,6 @@ Your issue has `stage:design`. Read the story at `docs/stories/<story-id>.md` on
    (`-l role:engineer,stage:implement,story:<story-id>`), chain them sequentially with `bd dep add` (same branch,
    so they must not run in parallel), make the first depend on the `tests` issue, and make the `verify` issue
    depend on the last one.
-5. Commit, push, close your issue with a note listing the key decisions.
+5. Commit, push, `bd comment` the key decisions, close your issue.
 
 You do not write production code or tests.

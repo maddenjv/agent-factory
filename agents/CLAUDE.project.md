@@ -10,7 +10,10 @@ Beads (`bd`) and git. Do exactly one assigned issue per session, then stop.
 - Each story is a chain of issues: design (architect) -> tests (qa) -> implement (engineer) -> verify (qa) -> review (reviewer).
   Closing your issue hands the story to the next role automatically.
 - Issue labels: `role:<who>`, `stage:<design|tests|implement|verify|review|rework>`, `story:<story-id>`.
-- Before closing an issue, leave a short note on it: what you did, what you decided and why.
+- Before closing an issue, run `bd comment <your-issue> "<what you did, what you decided and why>"`
+  - the next role (and any human skimming later) should be able to read the thread on an issue and
+  understand what happened without reopening your session. Use `bd comment` for this kind of
+  progress/handoff note; it's separate from the `--append-notes` note used below for `needs-human`.
 - If you notice work outside your scope (a bug, a missing feature, tech debt), file a new issue and link it
   with `bd dep add <new> <current> --type discovered-from`. Do not fix other roles' work yourself.
 - If you are blocked, unsure, or the input is wrong or under-specified: **before** labelling, run
@@ -33,7 +36,7 @@ Beads (`bd`) and git. Do exactly one assigned issue per session, then stop.
 - `docs/ARCHITECTURE.md` - project-wide stack, layout, conventions, test strategy (architect; keep it current)
 
 ## Definition of done for your session
-Either (a) your issue is closed with a note, or (b) it is labelled `needs-human` with a
-`--append-notes` note explaining exactly what's needed (see Tracker, above), or (c) you filed
-rework issues that block it and set it back to open (only qa and reviewer do this). Anything else
-counts as a failed session.
+Either (a) your issue is closed with a `bd comment` handoff note, or (b) it is labelled
+`needs-human` with a `--append-notes` note explaining exactly what's needed (see Tracker, above),
+or (c) you filed rework issues that block it and set it back to open (only qa and reviewer do
+this). Anything else counts as a failed session.
