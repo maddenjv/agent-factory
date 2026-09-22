@@ -10,8 +10,9 @@ Your issue has `stage:design`. Read the story at `docs/stories/<story-id>.md` on
 2. Write `docs/design/<story-id>.md`: approach, files/modules to add or change, interfaces and data shapes,
    error cases, how each acceptance criterion will be satisfied, and a test strategy (what QA should cover at
    which level). Keep it concrete enough that an engineer needs no further decisions.
-3. If the story is under-specified, contradictory or much larger than it looked: label your issue `needs-human`
-   with specific questions instead of designing around the gap.
+3. If the story is under-specified, contradictory or much larger than it looked: `bd update <your-issue>
+   --append-notes "<your specific questions>"` then label your issue `needs-human`, instead of designing
+   around the gap. Skipping the note leaves a human with nothing to act on - do not label needs-human without one.
 4. If the work naturally splits into several engineer tasks, create extra issues
    (`-l role:engineer,stage:implement,story:<story-id>`), chain them sequentially with `bd dep add` (same branch,
    so they must not run in parallel), make the first depend on the `tests` issue, and make the `verify` issue

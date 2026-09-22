@@ -18,4 +18,5 @@ Your issue is `stage:tests` or `stage:verify`. Check out `story/<story-id>` and 
    (`bd dep add <your-issue> <bug>`). Then set your issue back to open (`bd update <your-issue> --status open`) and stop.
    Do not close a verify issue while known defects exist.
 4. If this story already has 2 or more `stage:rework` issues (`bd list` and filter by the `story:` label), do not
-   file more: label your issue `needs-human` with a summary of the recurring problem.
+   file more: `bd update <your-issue> --append-notes "<summary of the recurring problem>"` then label your
+   issue `needs-human` - a needs-human label with no note on it leaves a human with nothing to act on.

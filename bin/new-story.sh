@@ -15,6 +15,11 @@ mk() {  # role stage suffix-labels description
 ctx="Story: docs/stories/$sid.md. Branch: story/$sid. Conventions: CLAUDE.md."
 
 d=$(mk architect design    "$gate" "Design the implementation. $ctx")
+# HUMAN_APPROVE_STORIES=1 gates the design issue behind needs-human from creation - a deliberate
+# checkpoint, not an agent stuck partway through. It's never touched by the architect (next_issue
+# excludes needs-human issues), so nobody ever explains it via --append-notes the way a stuck
+# agent would - do it here instead, so `bd show` doesn't look identical to a real stuck-agent case.
+[ -n "$gate" ] && bd update "$d" --append-notes "Gated by HUMAN_APPROVE_STORIES=1 - a deliberate checkpoint, not a stuck agent. Review docs/stories/$sid.md, then run 'approve.sh $d' to let the architect start design." >/dev/null
 t=$(mk qa        tests     ""      "Write acceptance tests from the story's acceptance criteria (before implementation exists). $ctx")
 i=$(mk engineer  implement ""      "Implement per docs/design/$sid.md until the acceptance tests pass. $ctx")
 v=$(mk qa        verify    ""      "Verify the implementation against every acceptance criterion; add edge-case tests. $ctx")

@@ -161,7 +161,20 @@ handle_outcome() {  # 0 = the agent did something legitimate with the issue, 1 =
   local id=$1 st
   st=$(issue_field "$id" status)
   if [ "$st" = "closed" ]; then log "$id closed (handed off)"; return 0; fi
-  if has_label "$id" needs-human; then alert "$id flagged needs-human by the agent"; return 0; fi
+  if has_label "$id" needs-human; then
+    # CLAUDE.project.md tells the agent to --append-notes what it needs BEFORE labelling
+    # needs-human - but that's an instruction to an LLM, not a guarantee. Back it up mechanically:
+    # if it labelled needs-human without a note (issue_field's "// empty" also catches a JSON
+    # null, which is what an unset field reads as), `bd show` would otherwise be a dead end for
+    # a human trying to figure out what's actually needed.
+    if [ -z "$(issue_field "$id" notes)" ]; then
+      bd update "$id" --append-notes "agent-loop: $AGENT_ID labelled this needs-human but left no note explaining what it needs - see the session transcript. Transcript: $LOGDIR/$(date +%F).$id.jsonl" >/dev/null 2>&1
+      alert "$id flagged needs-human WITHOUT an explanation from the agent - see the transcript"
+    else
+      alert "$id flagged needs-human by the agent"
+    fi
+    return 0
+  fi
   if [ "$st" = "open" ] && ! is_ready "$id"; then log "$id parked behind new blockers (rework/handoff)"; return 0; fi
   return 1
 }
