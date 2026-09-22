@@ -33,17 +33,25 @@ host-`~/.claude` sync on startup so each role reuses your logged-in Claude Code 
 API key or token needed by default.
 
 **Two directories, kept separate (see `bin/lib.sh`):**
-- **KIT_DIR** — this repo (`docker-compose.yml`, `bin/`, `agents/`), wherever it's checked out. `.env` lives here.
+- **KIT_DIR** — this repo (`docker-compose.yml`, `bin/`, `agents/`), wherever it's checked out.
 - **PROJECT_DIR** — the real project you're pointing agent-factory at. Every `bin/*.sh` script
   below takes this from **your current directory**, not from where this kit lives — `cd` into
   your project first, every time. It must already be an existing git repo on branch `main`.
   All of agent-factory's own runtime state (workspaces, control, logs, claude config, the Dolt
-  database) lives under `<project>/.agent-factory/` (gitignored), not inside this kit — so it
-  travels with the project, and pointing this kit at a different project next time starts clean.
+  database, and its own `.env`) lives under `<project>/.agent-factory/` (gitignored), not inside
+  this kit — so it travels with the project, and pointing this kit at a different project next
+  time starts clean.
+
+**`.env` resolution**: if `<project>/.agent-factory/.env` exists, that's the only `.env` used for
+that project. Otherwise it falls back to `KIT_DIR/.env`. The two are never merged — whichever one
+is in effect supplies all settings for that run, so a project `.env` that only sets a few
+variables won't quietly inherit the rest from the kit-level file. Running more than one project
+from the same kit checkout? Give each project its own `<project>/.agent-factory/.env` so their
+settings (model choice, budget caps, notification URL, etc.) don't leak into each other.
 
 ```bash
 cd ~/path/to/your/project    # NOT this kit's directory - this is the repo agents will work on
-/path/to/agent-factory/bin/init.sh    # first run creates KIT_DIR/.env; defaults need no auth (reuses host ~/.claude); run again
+/path/to/agent-factory/bin/init.sh    # first run creates <project>/.agent-factory/.env; defaults need no auth (reuses host ~/.claude); run again
 /path/to/agent-factory/bin/start.sh   # tmux session "factory": window "agents" (panes: board po architect qa engineer reviewer), window "ops"
 tmux attach -t factory
 ```

@@ -50,7 +50,7 @@ services:
     entrypoint: ["bash", "${KIT_DIR}/bin/agent-loop.sh"]
     working_dir: ${PROJECT_DIR}
     profiles: ["agents"]
-    env_file: .env
+    env_file: ${AGENT_ENV_FILE:?run via bin/lib.sh's dc() or export AGENT_ENV_FILE yourself}
     environment:
       ROLE: ${ROLE:-shell}
       KIT_DIR: ${KIT_DIR}

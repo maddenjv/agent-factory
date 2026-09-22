@@ -5,12 +5,17 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 chmod +x "$KIT_DIR"/bin/*.sh
-if [ ! -f "$KIT_DIR/.env" ]; then
-  cp "$KIT_DIR/.env.example" "$KIT_DIR/.env"
-  echo "Created $KIT_DIR/.env - defaults to reusing your host ~/.claude login (no key needed); edit it only if you want a separate CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY instead, then re-run bin/init.sh"
+
+mkdir -p "$DATA_DIR"   # moved up: AGENT_ENV_FILE's project-level candidate must exist to test for
+if [ ! -f "$AGENT_ENV_FILE" ]; then
+  # AGENT_ENV_FILE only falls back to $KIT_DIR/.env when that file already exists (see lib.sh),
+  # so reaching this branch means NEITHER exists yet - starter goes at the project-level path,
+  # the location new projects should use going forward.
+  cp "$KIT_DIR/.env.example" "$DATA_DIR/.env"
+  echo "Created $DATA_DIR/.env - defaults to reusing your host ~/.claude login (no key needed); edit it only if you want a separate CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY instead, then re-run bin/init.sh"
   exit 1
 fi
-grep -q '^HOST_UID=' "$KIT_DIR/.env" || { echo "HOST_UID=$(id -u)" >> "$KIT_DIR/.env"; echo "HOST_GID=$(id -g)" >> "$KIT_DIR/.env"; }
+grep -q '^HOST_UID=' "$AGENT_ENV_FILE" || { echo "HOST_UID=$(id -u)" >> "$AGENT_ENV_FILE"; echo "HOST_GID=$(id -g)" >> "$AGENT_ENV_FILE"; }
 
 # Checked here, before anything below creates .agent-factory/ (which would otherwise make this
 # repo look "dirty" to the same check). bin/init-project.sh commits scaffolding directly to main

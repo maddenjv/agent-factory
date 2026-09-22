@@ -19,7 +19,7 @@ pane() {  # pane <title> <role> <bash-args...>  - first call creates the window,
   local title=$1 role=$2; shift 2
   # PROJECT_DIR/KIT_DIR spelled out explicitly (not relied on via tmux's environment inheritance)
   # so this is correct even if the pane gets torn down and respawned later from a different shell.
-  local cmd="PROJECT_DIR='$PROJECT_DIR' KIT_DIR='$KIT_DIR' ROLE=$role docker compose -f '$KIT_DIR/docker-compose.yml' run --rm --name factory-$title $*"
+  local cmd="PROJECT_DIR='$PROJECT_DIR' KIT_DIR='$KIT_DIR' AGENT_ENV_FILE='$AGENT_ENV_FILE' ROLE=$role docker compose -f '$KIT_DIR/docker-compose.yml' run --rm --name factory-$title $*"
   if ! tmux has-session -t "$SESSION" 2>/dev/null; then
     tmux new-session -d -s "$SESSION" -n "$WIN" "$cmd"
   else
@@ -37,7 +37,7 @@ tmux set-option -w -t "$SESSION:$WIN" pane-border-status top
 tmux set-option -w -t "$SESSION:$WIN" pane-border-format "#{pane_title}"
 tmux select-layout -t "$SESSION:$WIN" tiled >/dev/null
 
-ops_cmd="PROJECT_DIR='$PROJECT_DIR' KIT_DIR='$KIT_DIR' ROLE=shell docker compose -f '$KIT_DIR/docker-compose.yml' run --rm --name factory-ops --entrypoint bash agent '$KIT_DIR/bin/ops-shell.sh'"
+ops_cmd="PROJECT_DIR='$PROJECT_DIR' KIT_DIR='$KIT_DIR' AGENT_ENV_FILE='$AGENT_ENV_FILE' ROLE=shell docker compose -f '$KIT_DIR/docker-compose.yml' run --rm --name factory-ops --entrypoint bash agent '$KIT_DIR/bin/ops-shell.sh'"
 tmux new-window -t "$SESSION" -n ops "$ops_cmd"
 tmux set-option -w -t "$SESSION:ops" remain-on-exit on
 
