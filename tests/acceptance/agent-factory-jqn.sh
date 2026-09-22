@@ -229,7 +229,11 @@ test_shellcheck_touched_scripts() {
     skp "shellcheck: not installed in this environment"
     return
   fi
-  if shellcheck bin/lib.sh bin/init.sh bin/start.sh; then
+  # -x (follow sourced files) needs to run from bin/ itself, since lib.sh is sourced via a
+  # relative path resolved from the sourcing script's own directory - otherwise shellcheck
+  # reports a bogus SC1091 ("lib.sh does not exist") that has nothing to do with the scripts'
+  # actual content.
+  if (cd bin && shellcheck -x lib.sh init.sh start.sh); then
     ok "shellcheck: bin/lib.sh, bin/init.sh, bin/start.sh clean"
   else
     bad "shellcheck: findings in bin/lib.sh, bin/init.sh, and/or bin/start.sh"
