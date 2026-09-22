@@ -1,0 +1,9 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_server_host": "dolt",
+  "dolt_server_port": 3306,
+  "dolt_database": "agent_factory",
+  "project_id": "8ce9cd4e-994e-44ea-9c0e-b59b14c9774c"
+}
