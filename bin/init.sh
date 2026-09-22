@@ -42,4 +42,4 @@ done
 
 dc run --rm --entrypoint bash agent "$KIT_DIR/bin/init-project.sh"
 echo
-echo "Done. Next: bin/smoke-test.sh (see README), then bin/start.sh"
+echo "Done. Next: $KIT_DIR/bin/start.sh"
