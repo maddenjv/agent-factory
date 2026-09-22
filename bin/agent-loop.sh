@@ -26,6 +26,7 @@ WIP_LIMIT="${WIP_LIMIT:-2}"
 DAILY_BUDGET_USD="${DAILY_BUDGET_USD:-}"
 PREFLIGHT="${PREFLIGHT:-1}"
 QUOTA_RETRY_INTERVAL="${QUOTA_RETRY_INTERVAL:-900}"  # fallback poll interval when a reset time can't be parsed
+CONTAINER_HOME="${CONTAINER_HOME:-/home/john}"
 model_var="MODEL_${ROLE^^}"
 MODEL="${!model_var:-}"
 
@@ -228,9 +229,9 @@ sync_dir() {  # sync_dir HOST_PATH LIVE_PATH LABEL
 sync_configs() {
   (
     flock -w 120 9 || { log "sync lock timed out; skipping host-config sync"; return 1; }
-    sync_dir /home/john/.claude-host "${CLAUDE_CONFIG_DIR:-/home/john/.claude}" "~/.claude"
-    sync_dir /home/john/.ai-dev-kit-host /home/john/.ai-dev-kit "~/.ai-dev-kit"
-    sync_dir /home/john/.agents-host /home/john/.agents "~/.agents"
+    sync_dir "$CONTAINER_HOME/.claude-host" "${CLAUDE_CONFIG_DIR:-$CONTAINER_HOME/.claude}" "~/.claude"
+    sync_dir "$CONTAINER_HOME/.ai-dev-kit-host" "$CONTAINER_HOME/.ai-dev-kit" "~/.ai-dev-kit"
+    sync_dir "$CONTAINER_HOME/.agents-host" "$CONTAINER_HOME/.agents" "~/.agents"
   ) 9>"$CONTROL/sync.lock"
 }
 
