@@ -40,7 +40,19 @@ grep -qxF '.agent-factory/' .gitignore 2>/dev/null || echo '.agent-factory/' >> 
 # covers this). `bd init` has been reported to skip creating .beads/ when BEADS_DOLT_* env vars
 # are already set, so pass them as flags instead, same values.
 if [ ! -d .beads ]; then
+  # bd auto-detects a configured "origin" remote and tries to verify refs/dolt/data on it over
+  # SSH - which hangs/fails here (no SSH keys in the container, deliberately - see README) and,
+  # worse, has been seen to cascade into a failed database creation. Our issues live ONLY in the
+  # shared Dolt server (see docker-compose.yml); nothing about them is meant to sync via your
+  # project's real git remote, so origin is hidden from bd for this one command. The trap
+  # restores it on any exit from this script, success or failure - never left off by an error.
+  origin_url=$(git remote get-url origin 2>/dev/null || true)
+  if [ -n "$origin_url" ]; then
+    git remote remove origin
+    trap 'git remote get-url origin >/dev/null 2>&1 || git remote add origin "$origin_url"' EXIT
+  fi
   bd init --quiet --server --server-host dolt --server-port 3306
+  bd config set dolt.local-only true >/dev/null 2>&1 || true   # belt and braces for later bd calls
   # ...but "dolt" isn't reachable from your own host shell, only from inside a container. Every
   # bd call in THIS script still goes through it fine (BEADS_DOLT_SERVER_HOST above overrides
   # whatever's on disk), so it's safe to repoint the file here at the loopback address
