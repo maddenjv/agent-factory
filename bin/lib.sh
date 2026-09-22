@@ -23,7 +23,13 @@ toplevel=$(git -C "$PROJECT_DIR" rev-parse --show-toplevel 2>/dev/null) || {
 PROJECT_DIR="$toplevel"   # always the repo root, even if you ran this from a subdirectory
 
 DATA_DIR="$PROJECT_DIR/.agent-factory"
-export KIT_DIR PROJECT_DIR DATA_DIR
+
+# Per-project .env, falling back to the kit-level one - never merged (see docs/design/
+# agent-factory-jqn.md). Resolved once per script invocation; nothing here creates either file.
+AGENT_ENV_FILE="$DATA_DIR/.env"
+[ -f "$AGENT_ENV_FILE" ] || AGENT_ENV_FILE="$KIT_DIR/.env"
+
+export KIT_DIR PROJECT_DIR DATA_DIR AGENT_ENV_FILE
 
 dc() {  # dc <docker compose args...> - always targets the kit's compose file, from PROJECT_DIR
   docker compose -f "$KIT_DIR/docker-compose.yml" "$@"
