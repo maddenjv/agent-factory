@@ -90,17 +90,22 @@ budget_ok()   { [ -z "$DAILY_BUDGET_USD" ] || awk -v s="$(spent_today)" -v b="$D
 # consecutive-failure circuit breaker. Detected by text match since the CLI reports this as a
 # plain diagnostic line, not a structured stream-json error.
 quota_hit_message() {  # quota_hit_message FILE... -> first matching line, or empty
-  grep -ihEo 'hit your [a-z]+ limit[^"]*|usage limit[^"]*|rate limit exceeded[^"]*' "$@" 2>/dev/null | head -1
+  grep -ihEo 'hit your [a-z]+ limit[^"]*|usage limit[^"]*|limit reached[^"]*|rate limit exceeded[^"]*' "$@" 2>/dev/null | head -1
 }
 
 usage_limit_wait_seconds() {  # usage_limit_wait_seconds "<message text>" -> seconds to sleep
+  # The CLI's wording for this varies ("...resets 5:50pm (UTC)", "...continuing automatically at
+  # 6:50pm", etc.) so the time is matched wherever it appears, not anchored to specific lead-in
+  # words - just an H:MMam/pm clock time. Interpreted as the container's local time, which is UTC
+  # by default in this image (see Dockerfile) and matches the CLI's own likely rendering, with or
+  # without an explicit "(UTC)" label.
   local msg="$1" h m ap now epoch wait
-  if [[ "$msg" =~ [Rr]esets?\ ([0-9]{1,2}):([0-9]{2})\ *([AaPp][Mm])\ *\(UTC\) ]]; then
+  if [[ "$msg" =~ ([0-9]{1,2}):([0-9]{2})[[:space:]]*([AaPp][Mm]) ]]; then
     h="${BASH_REMATCH[1]}"; m="${BASH_REMATCH[2]}"; ap="${BASH_REMATCH[3],,}"
     [ "$ap" = pm ] && [ "$h" -ne 12 ] && h=$((h+12))
     [ "$ap" = am ] && [ "$h" -eq 12 ] && h=0
-    now=$(date -u +%s)
-    epoch=$(date -u -d "today $h:$m" +%s 2>/dev/null) || epoch=""
+    now=$(date +%s)
+    epoch=$(date -d "today $h:$m" +%s 2>/dev/null) || epoch=""
     if [ -n "$epoch" ]; then
       [ "$epoch" -le "$now" ] && epoch=$((epoch + 86400))  # already passed today -> tomorrow
       wait=$((epoch - now + 60))                            # +60s buffer past the reset
