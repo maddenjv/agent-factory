@@ -23,7 +23,11 @@ RUN npm install -g @anthropic-ai/claude-code
 COPY --from=bd-builder /root/go/bin/bd /usr/local/bin/bd
 RUN ln -s bd /usr/local/bin/beads
 
-RUN groupadd -g "$HOST_GID" john && useradd -u "$HOST_UID" -g "$HOST_GID" -m -s /bin/bash john
+# node:22-bookworm-slim already ships a 'node' user/group at uid/gid 1000 (the default
+# HOST_UID/HOST_GID). Drop it first so it can never collide with the 'john' we create below,
+# regardless of what HOST_UID/HOST_GID are set to.
+RUN userdel -r node 2>/dev/null; groupdel node 2>/dev/null; \
+    groupadd -g "$HOST_GID" john && useradd -u "$HOST_UID" -g "$HOST_GID" -m -s /bin/bash john
 
 USER john
 ENV HOME=/home/john
