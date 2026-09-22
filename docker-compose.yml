@@ -21,9 +21,16 @@ services:
     container_name: factory-dolt
     restart: unless-stopped
     environment:
-      DOLT_ROOT_HOST: "%"          # allow root from other containers; NOT published to the host
+      DOLT_ROOT_HOST: "%"          # allow root from other containers, and from the loopback
+                                    # publish below; still has no password (see README)
     volumes:
       - ${PROJECT_DIR}/.agent-factory/dolt:/var/lib/dolt
+    ports:
+      # Loopback only (not your LAN) - lets `bd` run from your own host shell in PROJECT_DIR,
+      # not just from inside a container pane. bin/init-project.sh points a fresh project's
+      # .beads/metadata.json at 127.0.0.1 for exactly this; agent-loop.sh/env.sh override it
+      # back to the Docker-internal "dolt" hostname for containers via BEADS_DOLT_SERVER_HOST.
+      - "127.0.0.1:${DOLT_HOST_PORT:-3306}:3306"
     networks: [factory]
 
   agent:

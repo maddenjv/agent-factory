@@ -61,7 +61,7 @@ uses server mode, but verify on your bd version.
 ## Day to day
 | Want to | Do |
 |---|---|
-| See state | `board` pane in the `agents` window; `bd ready`, `bd blocked`, `bd dep tree <id>` in the `ops` window |
+| See state | `board` pane in the `agents` window; `bd ready`, `bd blocked`, `bd dep tree <id>` in the `ops` window, or `bd` directly from your own host shell in the project directory — no container needed (see Security notes) |
 | Watch an agent | its pane in the `agents` window (rendered tool calls/text; Ctrl-b o to cycle, Ctrl-b q to jump by number); raw stream in `<project>/.agent-factory/logs/<role>/*.jsonl` |
 | Review-by-exception | `needs-human` list on the board; `bd show <id>` — the agent (or agent-loop.sh itself, on an attempt-cap/failure escalation) leaves a note on the issue explaining exactly what it needs; set `NOTIFY_URL` for push alerts |
 | Unstick an issue | answer what the issue's note asked for, then `approve.sh <id>` |
@@ -84,8 +84,12 @@ is discarded.
 - Containers have full outbound network access. Agents can install packages and reach the internet, which is
   useful and also the exfiltration path. If that matters, add an egress allowlist (Anthropic's reference
   devcontainer uses an iptables firewall) before running unattended on anything sensitive.
-- Dolt is only reachable on the compose network (no published port) and has no password. Any agent can already
-  rewrite the tracker, so this is a consistency boundary, not a security one.
+- Dolt is published on `127.0.0.1:3306` (override with `DOLT_HOST_PORT` in `.env`) so `bd` also works from
+  your own host shell in the project directory, not just from inside a container pane - loopback only, never
+  your LAN, but still no password. Any agent can already rewrite the tracker, so this is a consistency
+  boundary, not a security one. `bin/init-project.sh` points a fresh project's `.beads/metadata.json` at that
+  loopback address; containers override it back to the Docker-internal `dolt` hostname via
+  `BEADS_DOLT_SERVER_HOST` (`bin/env.sh`), so both paths keep working regardless of which one is stored.
 - "Origin" is your actual project directory, not a throwaway relay repo - all 5 agents clone from
   it, and the reviewer pushes straight into its checked-out `main` (see Setup). Agents cannot
   reach your project's own remote (GitHub, etc.) - only the local push to your working tree - so

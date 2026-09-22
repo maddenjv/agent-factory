@@ -4,6 +4,8 @@
 set -euo pipefail
 KIT_DIR="${KIT_DIR:?KIT_DIR must be set}"
 PROJECT_DIR="${PROJECT_DIR:?PROJECT_DIR must be set}"
+# shellcheck disable=SC1091
+source "$KIT_DIR/bin/env.sh"   # BEADS_DOLT_SERVER_HOST=dolt etc - every bd call below needs it
 cd "$PROJECT_DIR"
 git config --global --add safe.directory '*' 2>/dev/null || true
 
@@ -33,10 +35,19 @@ fi
 # Own runtime state (workspaces, control, logs, claude config, the dolt db) - never committed.
 grep -qxF '.agent-factory/' .gitignore 2>/dev/null || echo '.agent-factory/' >> .gitignore
 
-# Beads: server mode against the shared Dolt container. Deliberately NO BEADS_DOLT_* env here -
-# `bd init` has been reported to skip creating .beads/ when those are already set.
+# Beads: server mode against the shared Dolt container, connecting here via its Docker-internal
+# hostname (this runs inside a container - BEADS_DOLT_SERVER_HOST=dolt from env.sh, above, also
+# covers this). `bd init` has been reported to skip creating .beads/ when BEADS_DOLT_* env vars
+# are already set, so pass them as flags instead, same values.
 if [ ! -d .beads ]; then
   bd init --quiet --server --server-host dolt --server-port 3306
+  # ...but "dolt" isn't reachable from your own host shell, only from inside a container. Every
+  # bd call in THIS script still goes through it fine (BEADS_DOLT_SERVER_HOST above overrides
+  # whatever's on disk), so it's safe to repoint the file here at the loopback address
+  # docker-compose.yml publishes the port on - letting `bd` work directly from PROJECT_DIR on
+  # your host too, not just from inside a container pane.
+  jq '.dolt_server_host = "127.0.0.1"' .beads/metadata.json > .beads/metadata.json.tmp \
+    && mv .beads/metadata.json.tmp .beads/metadata.json
 fi
 bd setup claude >/dev/null 2>&1 || true
 
