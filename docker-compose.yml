@@ -1,10 +1,10 @@
 # Two things live here:
 #   dolt  - the single Beads database server all agents share (server mode = concurrent writers)
 #   agent - the image every role runs; started per-role by bin/start.sh via `docker compose run`.
-#           Built from the sibling claude-code-sandbox/ repo (../claude-code-sandbox) so the
-#           Claude Code / beads toolchain lives in one place instead of a second Dockerfile here.
-#           Its own ENTRYPOINT (sync host config, then `exec claude`) is for interactive use and
-#           is overridden below with agent-loop.sh, the headless polling loop these containers run.
+#           Built from this repo's own Dockerfile (Claude Code CLI, beads, git, jq - see
+#           docs/ARCHITECTURE.md). The Dockerfile's own default (a plain shell, no entrypoint
+#           behavior of its own) is overridden below with agent-loop.sh, the headless polling
+#           loop these containers run.
 #           agent-loop.sh does its own host-~/.claude sync (see .claude-host mount below) so each
 #           role reuses your logged-in Claude Code plan session without an API key or OAuth token.
 #
@@ -42,7 +42,7 @@ services:
 
   agent:
     build:
-      context: ../claude-code-sandbox
+      context: .
       args:
         HOST_UID: ${HOST_UID:-1000}
         HOST_GID: ${HOST_GID:-1000}
@@ -75,7 +75,7 @@ services:
     # Container hardening: no docker socket, no ~/.ssh, no other home-dir contents. The
     # deliberate exceptions above are ~/.claude, ~/.ai-dev-kit and ~/.agents, each mounted
     # read-only so agent-loop.sh can copy them into this role's own writable volume/config at
-    # startup (same pattern claude-code-sandbox's entrypoint.sh uses for interactive sessions).
+    # startup (same pattern an interactive `claude` entrypoint would use for a login session).
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     pids_limit: 512

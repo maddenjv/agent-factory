@@ -26,11 +26,11 @@ you type into — is a separate window.
    when they close. After 2 rework rounds a story goes to `needs-human`.
 
 ## Setup
-**Requires the sibling repo `../claude-code-sandbox`** — `docker-compose.yml` builds the `agent`
-image from it (the Claude Code + beads toolchain lives there, not in a Dockerfile here). Its
-container user is `john`; agent-loop.sh runs in place of the sandbox's default entrypoint (which
-just execs `claude` for interactive use), and does its own host-`~/.claude` sync on startup so
-each role reuses your logged-in Claude Code plan session — no API key or token needed by default.
+**Self-contained** — `docker-compose.yml` builds the `agent` image from this repo's own
+`Dockerfile` (the Claude Code + beads toolchain lives there). Its container user is `john`;
+agent-loop.sh runs in place of the image's default entrypoint (a plain shell), and does its own
+host-`~/.claude` sync on startup so each role reuses your logged-in Claude Code plan session — no
+API key or token needed by default.
 
 **Two directories, kept separate (see `bin/lib.sh`):**
 - **KIT_DIR** — this repo (`docker-compose.yml`, `bin/`, `agents/`), wherever it's checked out. `.env` lives here.
