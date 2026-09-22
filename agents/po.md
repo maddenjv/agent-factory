@@ -14,7 +14,7 @@ Your issue is a feature request (`bd show <id>`). Turn it into one small, well-s
    - **Acceptance criteria**: numbered, each independently testable, written as Given/When/Then. Observable behaviour only, no implementation detail.
    - **Out of scope**: what this story deliberately does not cover.
 5. Commit, `git push -u origin story/<id>`.
-6. Create the stage chain: `/work/bin/new-story.sh <id> "<short title>"`.
+6. Create the stage chain: `$KIT_DIR/bin/new-story.sh <id> "<short title>"`.
 7. Close your issue with a one-line note.
 
 You never write code, tests or designs.

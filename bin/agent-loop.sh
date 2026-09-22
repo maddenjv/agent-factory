@@ -7,11 +7,14 @@ set -uo pipefail
 
 ROLE="${ROLE:?ROLE must be set (po|architect|qa|engineer|reviewer)}"
 AGENT_ID="${AGENT_ID:-$ROLE}"
-WORK="${WORK:-/work}"
-ORIGIN="${ORIGIN:-/origin.git}"
-REPO="$WORK/repo"
-CONTROL="$WORK/control"
-LOGDIR="$WORK/logs/$ROLE"
+KIT_DIR="${KIT_DIR:?KIT_DIR must be set}"           # this repo (docker-compose.yml, bin/, agents/)
+PROJECT_DIR="${PROJECT_DIR:?PROJECT_DIR must be set}"  # the real project - see bin/lib.sh
+DATA_DIR="${DATA_DIR:-$PROJECT_DIR/.agent-factory}"    # agent-factory's own runtime state, kept
+                                                        # inside the project rather than the kit
+ORIGIN="${ORIGIN:-$PROJECT_DIR}"   # every role clones from and (only the reviewer) pushes to it
+REPO="$DATA_DIR/workspaces/$ROLE"
+CONTROL="$DATA_DIR/control"
+LOGDIR="$DATA_DIR/logs/$ROLE"
 STATE="$CONTROL/state/$AGENT_ID"
 
 MAX_TURNS="${MAX_TURNS:-60}"
@@ -27,7 +30,7 @@ MODEL="${!model_var:-}"
 
 mkdir -p "$LOGDIR" "$STATE" "$CONTROL/cost"
 # shellcheck disable=SC1091
-source "$WORK/bin/env.sh"
+source "$KIT_DIR/bin/env.sh"
 
 # ---------- logging / alerting ----------
 log() { printf '%s [%s] %s\n' "$(date -u +%FT%TZ)" "$AGENT_ID" "$*" | tee -a "$LOGDIR/loop.log"; }
@@ -100,7 +103,7 @@ RENDER='fromjson? | select(type=="object") |
     else empty end )'
 
 build_prompt() {
-  cat "$WORK/agents/$ROLE.md"
+  cat "$KIT_DIR/agents/$ROLE.md"
   printf '\n\n---\nYour assigned issue: %s\nRepository: %s (your own clone; remote "origin"). Shared conventions are in CLAUDE.md.\nStart with: bd show %s\n' "$1" "$REPO" "$1"
 }
 
@@ -131,6 +134,10 @@ record_failure() {
   n=$(( $(cat "$f" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$f"
   bd update "$id" --status open >/dev/null 2>&1
   if [ "$n" -ge "$MAX_ATTEMPTS_PER_ISSUE" ]; then
+    # This is agent-loop.sh escalating on its own (attempt cap, not the agent choosing to stop),
+    # so it can't explain WHY in the way the agent itself could - but a bd show with nothing on
+    # it is still a dead end, so at least point at the transcript.
+    bd update "$id" --append-notes "agent-loop: not completed after $n attempt(s) by $AGENT_ID (session ended without closing or explaining why). Transcript: $LOGDIR/$(date +%F).$id.jsonl" >/dev/null 2>&1
     bd label add "$id" needs-human >/dev/null 2>&1
     alert "$id not completed after $n attempts; labelled needs-human"
   else
@@ -138,7 +145,39 @@ record_failure() {
   fi
 }
 
+# ---------- host config sync ----------
+# docker-compose.yml mounts host ~/.claude, ~/.ai-dev-kit and ~/.agents read-only at *-host (same
+# convention, and same three directories, as claude-code-sandbox's own entrypoint.sh). Copying
+# each into its live, writable counterpart here reproduces that sync for these headless
+# containers. ~/.claude is per-role (its own volume, so roles never share or race on it) and
+# reusing it is what lets these agents run on your logged-in Claude Code plan session with no
+# ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN needed. ~/.ai-dev-kit and ~/.agents are shared,
+# writable volumes across all 5 roles, same as the sandbox shares them across sessions - so all 5
+# containers starting together would otherwise run `cp -a` into them at once and race each other
+# (concurrent unlink+create on the same paths -> spurious "File exists" errors, or worse). The
+# flock in sync_configs() serializes every role's sync through a lock file on the shared CONTROL
+# mount, so only one copy runs at a time.
+sync_dir() {  # sync_dir HOST_PATH LIVE_PATH LABEL
+  local host="$1" live="$2" label="$3"
+  if [ ! -d "$host" ] || [ -z "$(ls -A "$host" 2>/dev/null)" ]; then
+    log "no host $label mounted; skipping sync"
+  else
+    cp -a --remove-destination "${host}/." "${live}/"
+    log "synced host $label into $live"
+  fi
+}
+
+sync_configs() {
+  (
+    flock -w 120 9 || { log "sync lock timed out; skipping host-config sync"; return 1; }
+    sync_dir /home/john/.claude-host "${CLAUDE_CONFIG_DIR:-/home/john/.claude}" "~/.claude"
+    sync_dir /home/john/.ai-dev-kit-host /home/john/.ai-dev-kit "~/.ai-dev-kit"
+    sync_dir /home/john/.agents-host /home/john/.agents "~/.agents"
+  ) 9>"$CONTROL/sync.lock"
+}
+
 # ---------- startup ----------
+sync_configs
 git config --global user.name "$AGENT_ID"
 git config --global user.email "$AGENT_ID@factory.local"
 git config --global --add safe.directory '*'

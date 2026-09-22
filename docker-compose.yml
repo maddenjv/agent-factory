@@ -1,6 +1,20 @@
 # Two things live here:
 #   dolt  - the single Beads database server all agents share (server mode = concurrent writers)
-#   agent - the image every role runs; started per-role by bin/start.sh via `docker compose run`
+#   agent - the image every role runs; started per-role by bin/start.sh via `docker compose run`.
+#           Built from the sibling claude-code-sandbox/ repo (../claude-code-sandbox) so the
+#           Claude Code / beads toolchain lives in one place instead of a second Dockerfile here.
+#           Its own ENTRYPOINT (sync host config, then `exec claude`) is for interactive use and
+#           is overridden below with agent-loop.sh, the headless polling loop these containers run.
+#           agent-loop.sh does its own host-~/.claude sync (see .claude-host mount below) so each
+#           role reuses your logged-in Claude Code plan session without an API key or OAuth token.
+#
+# Always invoked via bin/lib.sh's `dc` (docker compose -f <this file>), never by `cd`-ing here
+# first: KIT_DIR (this repo) and PROJECT_DIR (the project agent-factory is pointed at - wherever
+# you `cd`'d before running bin/start.sh etc.) are two DIFFERENT directories, both passed in as
+# env vars and mounted at their own real host paths. All of agent-factory's own runtime state
+# (workspaces, control, logs, claude config, the dolt db) lives under PROJECT_DIR/.agent-factory,
+# so it travels with the project instead of being buried inside this kit - see bin/lib.sh.
+name: agent-factory
 services:
   dolt:
     image: dolthub/dolt-sql-server:latest
@@ -9,36 +23,53 @@ services:
     environment:
       DOLT_ROOT_HOST: "%"          # allow root from other containers; NOT published to the host
     volumes:
-      - ./data/dolt:/var/lib/dolt
+      - ${PROJECT_DIR}/.agent-factory/dolt:/var/lib/dolt
     networks: [factory]
 
   agent:
     build:
-      context: ./docker
+      context: ../claude-code-sandbox
       args:
-        UID: ${HOST_UID:-1000}
-        GID: ${HOST_GID:-1000}
+        HOST_UID: ${HOST_UID:-1000}
+        HOST_GID: ${HOST_GID:-1000}
     image: factory-agent:latest
+    entrypoint: ["bash", "${KIT_DIR}/bin/agent-loop.sh"]
+    working_dir: ${PROJECT_DIR}
     profiles: ["agents"]
     env_file: .env
     environment:
       ROLE: ${ROLE:-shell}
+      KIT_DIR: ${KIT_DIR}
+      PROJECT_DIR: ${PROJECT_DIR}
     init: true
     depends_on: [dolt]
     networks: [factory]
     volumes:
-      - ./data/origin.git:/origin.git
-      - ./data/workspaces/${ROLE:-shell}:/work/repo
-      - ./data/logs:/work/logs
-      - ./data/control:/work/control
-      - ./data/claude/${ROLE:-shell}:/home/agent/.claude
-      - ./agents:/work/agents:ro
-      - ./bin:/work/bin:ro
-    # Container hardening. Nothing else is mounted: no docker socket, no ~/.ssh, no home dir.
+      # This kit: read-only. Nothing that runs in a container needs to modify its own
+      # orchestration scripts or prompts.
+      - ${KIT_DIR}:${KIT_DIR}:ro
+      # The real project: read-write, at the identical host path. Every role clones from and
+      # works in a copy of this under .agent-factory/workspaces/<role>; only the reviewer's
+      # merge-to-main push touches this checkout directly (see bin/init.sh's updateInstead).
+      - ${PROJECT_DIR}:${PROJECT_DIR}
+      - ${PROJECT_DIR}/.agent-factory/claude/${ROLE:-shell}:/home/john/.claude
+      - ${HOME}/.claude:/home/john/.claude-host:ro
+      - ai-dev-kit:/home/john/.ai-dev-kit
+      - ${HOME}/.ai-dev-kit:/home/john/.ai-dev-kit-host:ro
+      - agents-home:/home/john/.agents
+      - ${HOME}/.agents:/home/john/.agents-host:ro
+    # Container hardening: no docker socket, no ~/.ssh, no other home-dir contents. The
+    # deliberate exceptions above are ~/.claude, ~/.ai-dev-kit and ~/.agents, each mounted
+    # read-only so agent-loop.sh can copy them into this role's own writable volume/config at
+    # startup (same pattern claude-code-sandbox's entrypoint.sh uses for interactive sessions).
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     pids_limit: 512
     mem_limit: 6g
+
+volumes:
+  ai-dev-kit: {}
+  agents-home: {}
 
 networks:
   factory: {}

@@ -1,14 +1,18 @@
 # agent-factory
 
-Five Claude Code agents (po, architect, qa, engineer, reviewer), one tmux window and one Docker
-container each, coordinated through Beads and git. Agents run with `--dangerously-skip-permissions`
-inside their container.
+Five Claude Code agents (po, architect, qa, engineer, reviewer), each its own Docker container,
+coordinated through Beads and git. Agents run with `--dangerously-skip-permissions` inside their
+container. The status board and all 5 agents show as panes in one tmux window; `ops` — the shell
+you type into — is a separate window.
 
 ```
                        shared Dolt server (container "dolt")  <- the only Beads database
                                    ^   ^   ^   ^   ^
-   tmux window:   po     architect     qa     engineer     reviewer      (+ ops, board)
-   container:    each has its own git clone of  data/origin.git  (bare repo on the host)
+   tmux "agents" window, one pane each:   board | po | architect | qa | engineer | reviewer
+   (+ separate "ops" window)
+   container: each has its own git clone of YOUR PROJECT (see Setup) - only the reviewer pushes
+   back to it directly; stories, designs and the beads database all live inside it, under
+   <project>/.agent-factory/
 ```
 
 ## Flow
@@ -22,11 +26,34 @@ inside their container.
    when they close. After 2 rework rounds a story goes to `needs-human`.
 
 ## Setup
+**Requires the sibling repo `../claude-code-sandbox`** — `docker-compose.yml` builds the `agent`
+image from it (the Claude Code + beads toolchain lives there, not in a Dockerfile here). Its
+container user is `john`; agent-loop.sh runs in place of the sandbox's default entrypoint (which
+just execs `claude` for interactive use), and does its own host-`~/.claude` sync on startup so
+each role reuses your logged-in Claude Code plan session — no API key or token needed by default.
+
+**Two directories, kept separate (see `bin/lib.sh`):**
+- **KIT_DIR** — this repo (`docker-compose.yml`, `bin/`, `agents/`), wherever it's checked out. `.env` lives here.
+- **PROJECT_DIR** — the real project you're pointing agent-factory at. Every `bin/*.sh` script
+  below takes this from **your current directory**, not from where this kit lives — `cd` into
+  your project first, every time. It must already be an existing git repo on branch `main`.
+  All of agent-factory's own runtime state (workspaces, control, logs, claude config, the Dolt
+  database) lives under `<project>/.agent-factory/` (gitignored), not inside this kit — so it
+  travels with the project, and pointing this kit at a different project next time starts clean.
+
 ```bash
-bin/init.sh          # first run creates .env; add ANTHROPIC_API_KEY (or CLAUDE_CODE_OAUTH_TOKEN); run again
-bin/start.sh         # tmux session "factory": ops, board, po, architect, qa, engineer, reviewer
+cd ~/path/to/your/project    # NOT this kit's directory - this is the repo agents will work on
+/path/to/agent-factory/bin/init.sh    # first run creates KIT_DIR/.env; defaults need no auth (reuses host ~/.claude); run again
+/path/to/agent-factory/bin/start.sh   # tmux session "factory": window "agents" (panes: board po architect qa engineer reviewer), window "ops"
 tmux attach -t factory
 ```
+`bin/init.sh` also sets `receive.denyCurrentBranch=updateInstead` on your project so the
+reviewer's final `git push origin main` can update its checked-out files directly (standard git
+feature - it refuses loudly, not silently, if your project has uncommitted changes at that
+moment). It commits initial scaffolding (`docs/stories/`, `docs/design/`, beads init, and either
+a new `CLAUDE.md` or an appended section on your existing one) straight to your project's `main`
+— it refuses to run at all if your project isn't already clean on `main` first.
+
 **Before running unattended**, in the `ops` window: `smoke-test.sh`. It closes 8 issues concurrently and checks
 every close persisted. Beads has open reports of lost writes under concurrent agents in embedded mode; this kit
 uses server mode, but verify on your bd version.
@@ -34,14 +61,14 @@ uses server mode, but verify on your bd version.
 ## Day to day
 | Want to | Do |
 |---|---|
-| See state | `board` window; `bd ready`, `bd blocked`, `bd dep tree <id>` in `ops` |
-| Watch an agent | its tmux window (rendered tool calls/text); raw stream in `data/logs/<role>/*.jsonl` |
-| Review-by-exception | `needs-human` list on the board; set `NOTIFY_URL` for push alerts |
-| Unstick an issue | fix/answer it, then `approve.sh <id>` |
-| Pause / resume | `bin/stop.sh` (graceful) / `bin/stop.sh clear` then `bin/start.sh` |
+| See state | `board` pane in the `agents` window; `bd ready`, `bd blocked`, `bd dep tree <id>` in the `ops` window |
+| Watch an agent | its pane in the `agents` window (rendered tool calls/text; Ctrl-b o to cycle, Ctrl-b q to jump by number); raw stream in `<project>/.agent-factory/logs/<role>/*.jsonl` |
+| Review-by-exception | `needs-human` list on the board; `bd show <id>` — the agent (or agent-loop.sh itself, on an attempt-cap/failure escalation) leaves a note on the issue explaining exactly what it needs; set `NOTIFY_URL` for push alerts |
+| Unstick an issue | answer what the issue's note asked for, then `approve.sh <id>` |
+| Pause / resume | `bin/stop.sh` (graceful) / `bin/stop.sh clear` then `bin/start.sh` — run from the same project directory |
 | Hard stop | `bin/stop.sh now` |
-| Restart one agent | `tmux respawn-pane -k -t factory:<role>` |
-| Publish | `git -C data/origin.git remote add github <url>; git -C data/origin.git push github main` |
+| Restart one agent | `tmux list-panes -t factory:agents` for its index, then `tmux respawn-pane -k -t factory:agents.<index>` |
+| Publish | Nothing special — the reviewer already merged straight into your project's `main`. Push it to your own remote the way you normally would. |
 
 ## Guardrails built in
 Per-session turn cap and wall-clock timeout; per-issue attempt cap (then `needs-human`); circuit breaker that stops
@@ -51,13 +78,18 @@ is discarded.
 
 ## Security notes
 - The container is the only thing between the agent and your machine. Nothing sensitive is mounted (no docker
-  socket, `~/.ssh`, or home). Keep it that way. Use an API key with a spend limit, and no other credentials in `.env`.
+  socket, `~/.ssh`, or home). Keep it that way. A `CLAUDE_CODE_OAUTH_TOKEN` shares your plan's usage limits
+  across all five agents (no spend cap of its own — watch `DAILY_BUDGET_USD`); if using `ANTHROPIC_API_KEY`
+  instead, use one with a spend limit. Either way, put no other credentials in `.env`.
 - Containers have full outbound network access. Agents can install packages and reach the internet, which is
   useful and also the exfiltration path. If that matters, add an egress allowlist (Anthropic's reference
   devcontainer uses an iptables firewall) before running unattended on anything sensitive.
 - Dolt is only reachable on the compose network (no published port) and has no password. Any agent can already
   rewrite the tracker, so this is a consistency boundary, not a security one.
-- The remote is a local bare repo, so agents cannot push to GitHub. You publish.
+- "Origin" is your actual project directory, not a throwaway relay repo - all 5 agents clone from
+  it, and the reviewer pushes straight into its checked-out `main` (see Setup). Agents cannot
+  reach your project's own remote (GitHub, etc.) - only the local push to your working tree - so
+  publishing beyond that stays a separate, manual step under your own control.
 
 ## Things I could not test (Docker unavailable where this was written) - check first
 1. `dolthub/dolt-sql-server` honouring `DOLT_ROOT_HOST=%` with no root password, and listening on 3306 (env.sh assumes 3306).
