@@ -88,9 +88,17 @@ budget_ok()   { [ -z "$DAILY_BUDGET_USD" ] || awk -v s="$(spent_today)" -v b="$D
 # temporary, external condition, not a bug in the issue or the agent's work on it - so hitting
 # one must never count as a failed attempt (record_failure/MAX_ATTEMPTS_PER_ISSUE) or trip the
 # consecutive-failure circuit breaker. Detected by text match since the CLI reports this as a
-# plain diagnostic line, not a structured stream-json error.
-quota_hit_message() {  # quota_hit_message FILE... -> first matching line, or empty
-  grep -ihEo 'hit your [a-z]+ limit[^"]*|usage limit[^"]*|limit reached[^"]*|rate limit exceeded[^"]*' "$@" 2>/dev/null | head -1
+# plain diagnostic line, not a structured stream-json error - but ONLY ever scanned against the
+# CLI's own stderr for this run (run_agent passes just $errfile, never $logfile). The jsonl
+# transcript holds the agent's own conversation, including whatever it read - and a false match
+# there once genuinely happened: the agent read this very file, whose text a few lines up
+# literally contains the words "usage limit", and got treated as a real hit. Matching against the
+# raw stderr of a single `claude` invocation can't false-positive on a file the agent chose to
+# read, since that never goes through stderr. The [^"]{0,200} cap bounds the extracted text even
+# if grep's match runs long for some other reason - never dump an unbounded blob into a tmux pane.
+quota_hit_message() {  # quota_hit_message FILE -> first matching line (bounded, single-line), or empty
+  grep -ihEo 'hit your [a-z]+ limit[^"]{0,200}|usage limit[^"]{0,200}|limit reached[^"]{0,200}|rate limit exceeded[^"]{0,200}' "$@" 2>/dev/null \
+    | head -1 | tr -d '\r' | tr '\n\t' '  ' | cut -c1-200
 }
 
 usage_limit_wait_seconds() {  # usage_limit_wait_seconds "<message text>" -> seconds to sleep
@@ -152,7 +160,7 @@ run_agent() {  # sets LAST_RUN_QUOTA_MSG (empty unless this run hit a usage limi
   cost=$(jq -rs '[.[] | select(.type=="result")] | last | .total_cost_usd // 0' "$logfile" 2>/dev/null)
   echo "${cost:-0}" >> "$CONTROL/cost/$ROLE.$(date +%F)"
   cat "$errfile" >> "$LOGDIR/claude-err.log"
-  LAST_RUN_QUOTA_MSG=$(quota_hit_message "$logfile" "$errfile")
+  LAST_RUN_QUOTA_MSG=$(quota_hit_message "$errfile")   # stderr only - never the jsonl transcript
   rm -f "$errfile"
 }
 
