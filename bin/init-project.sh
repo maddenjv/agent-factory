@@ -57,8 +57,14 @@ if [ ! -d .beads ]; then
   # bd call in THIS script still goes through it fine (BEADS_DOLT_SERVER_HOST above overrides
   # whatever's on disk), so it's safe to repoint the file here at the loopback address
   # docker-compose.yml publishes the port on - letting `bd` work directly from PROJECT_DIR on
-  # your host too, not just from inside a container pane.
-  jq '.dolt_server_host = "127.0.0.1"' .beads/metadata.json > .beads/metadata.json.tmp \
+  # your host too, not just from inside a container pane. The port goes in .beads/dolt-server.port
+  # (the primary source bd now expects it from) rather than metadata.json's dolt_server_port,
+  # which bd deprecated (a stray copy left in metadata.json can leak into a DIFFERENT project's
+  # config if it's ever cloned/copied as a template) - removed here to silence that warning. Same
+  # host-vs-container override rule applies: BEADS_DOLT_SERVER_PORT=3306 (env.sh) always wins
+  # inside a container regardless of what this file says.
+  echo "${DOLT_HOST_PORT:-3306}" > .beads/dolt-server.port
+  jq '.dolt_server_host = "127.0.0.1" | del(.dolt_server_port)' .beads/metadata.json > .beads/metadata.json.tmp \
     && mv .beads/metadata.json.tmp .beads/metadata.json
 fi
 bd setup claude >/dev/null 2>&1 || true
