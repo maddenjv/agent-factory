@@ -77,7 +77,7 @@ uses server mode, but verify on your bd version.
 | See state | `board` pane in the `agents` window; `bd ready`, `bd blocked`, `bd dep tree <id>` in the `ops` window, or `bd` directly from your own host shell in the project directory — no container needed (see Security notes) |
 | Watch an agent | its pane in the `agents` window (rendered tool calls/text; Ctrl-b o to cycle, Ctrl-b q to jump by number); raw stream in `<project>/.agent-factory/logs/<role>/*.jsonl` |
 | Review-by-exception | `needs-human` list on the board; `bd show <id>` — the agent (or agent-loop.sh itself, on an attempt-cap/failure escalation) leaves a note on the issue explaining exactly what it needs; set `NOTIFY_URL` for push alerts |
-| Unstick an issue | answer what the issue's note asked for, then `approve.sh <id>` |
+| Unstick an issue | answer what the issue's note asked for, then `approve.sh <id> -m "<answer>"` (or plain `approve.sh <id>`) |
 | Pause / resume | `bin/stop.sh` (graceful) / `bin/stop.sh clear` then `bin/start.sh` — run from the same project directory |
 | Hard stop | `bin/stop.sh now` |
 | Restart one agent | `tmux list-panes -t factory:agents` for its index, then `tmux respawn-pane -k -t factory:agents.<index>` |
