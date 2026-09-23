@@ -36,7 +36,7 @@ flowchart LR
 3. With `HUMAN_APPROVE_STORIES=1` the design issue starts labelled `needs-human`: read the story, then `approve.sh <design-issue>`.
 4. Each agent polls `bd ready --label role:<me>`, claims one issue, runs one fresh Claude session on it, and
    closes it, which unblocks the next stage. Design (architect, then engineer) and write-tests (qa) run in parallel
-   on their own branches (`story/<id>/design`, `story/<id>/tests`); each is merged into the shared `story/<id>`
+   on their own branches (`story/<id>-design`, `story/<id>-tests`); each is merged into the shared `story/<id>`
    before the next stage needs it (engineer merges design before implement closes; qa merges tests at the start of
    verify). Only the reviewer merges `story/<id>` to `main`.
 5. QA/reviewer defects become `stage:rework` issues for whichever role is at fault - engineer (implementation

@@ -91,24 +91,24 @@ test_ac5_review_depends_only_on_verify() {
 
 test_ac6_tracks_use_own_branches() {
   local ok=1
-  grep -q 'story/<story-id>/design' agents/architect.md || { fail "ac6: architect.md lacks story/<story-id>/design"; ok=0; }
-  grep -q 'story/<story-id>/tests' agents/qa.md || { fail "ac6: qa.md lacks story/<story-id>/tests"; ok=0; }
-  grep -q 'story/<story-id>/design' agents/engineer.md || { fail "ac6: engineer.md lacks design track branch"; ok=0; }
-  grep -q '/design' agents/CLAUDE.project.md && grep -q '/tests' agents/CLAUDE.project.md \
+  grep -q 'story/<story-id>-design' agents/architect.md || { fail "ac6: architect.md lacks story/<story-id>-design"; ok=0; }
+  grep -q 'story/<story-id>-tests' agents/qa.md || { fail "ac6: qa.md lacks story/<story-id>-tests"; ok=0; }
+  grep -q 'story/<story-id>-design' agents/engineer.md || { fail "ac6: engineer.md lacks design track branch"; ok=0; }
+  grep -q -e '-design' agents/CLAUDE.project.md && grep -q -e '-tests' agents/CLAUDE.project.md \
     || { fail "ac6: CLAUDE.project.md doesn't document track branches"; ok=0; }
   [ "$ok" = 1 ] && pass "ac6: each track has its own branch in role prompts + conventions"
 }
 
 test_ac7_engineer_merges_design_branch_before_closing() {
-  grep -qE 'git merge[^\n]*story/<story-id>/design' agents/engineer.md \
-    && pass "ac7: engineer.md merges story/<story-id>/design into story/<story-id>" \
+  grep -qE 'git merge[^\n]*story/<story-id>-design' agents/engineer.md \
+    && pass "ac7: engineer.md merges story/<story-id>-design into story/<story-id>" \
     || fail "ac7: engineer.md has no merge of the design branch"
 }
 
 test_ac8_qa_merges_tests_branch_at_verify() {
   local sect; sect=$(sed -n '/stage:verify/,$p' agents/qa.md)
-  echo "$sect" | grep -qE 'git merge[^\n]*story/<story-id>/tests' \
-    && pass "ac8: qa.md verify merges story/<story-id>/tests before running tests" \
+  echo "$sect" | grep -qE 'git merge[^\n]*story/<story-id>-tests' \
+    && pass "ac8: qa.md verify merges story/<story-id>-tests before running tests" \
     || fail "ac8: qa.md verify has no merge of the tests branch"
 }
 
@@ -160,6 +160,28 @@ test_ac13_readme_flow_prose_describes_parallel_tracks() {
   echo "$f" | grep -qi 'rework' && echo "$f" | grep -qi 'architect' && echo "$f" | grep -qi 'qa' \
     || { fail "ac13: Flow doesn't describe rework paths (architect/engineer/qa)"; return; }
   pass "ac13: Flow describes parallel tracks, merge point, rework paths"
+}
+
+test_ac14_no_nested_track_branch_names() {
+  if grep -qE 'story/<(story-)?id>/(design|tests)' agents/*.md README.md; then
+    fail "ac14: nested track branch names remain in agents/ or README"; return
+  fi
+  pass "ac14: no nested track branch names in prompts or README"
+}
+
+test_ac15_hyphenated_track_branches_can_be_pushed() {
+  local d; d=$(mktemp -d)
+  if ( set -e; cd "$d"; git init -q --bare origin.git; git init -q w; cd w
+       git config user.email t@t; git config user.name t
+       git commit -q --allow-empty -m init; git checkout -q -b story/X
+       git remote add origin ../origin.git; git push -q origin story/X
+       git checkout -q -b story/X-design story/X; git push -q origin story/X-design
+       git checkout -q -b story/X-tests story/X; git push -q origin story/X-tests ) >/dev/null 2>&1; then
+    pass "ac15: story/X-design and story/X-tests coexist with story/X"
+  else
+    fail "ac15: creating/pushing hyphenated track branches failed"
+  fi
+  rm -rf "$d"
 }
 
 for t in $(declare -F | awk '{print $3}' | grep '^test_ac'); do "$t"; done
