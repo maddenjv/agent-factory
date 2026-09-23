@@ -86,8 +86,6 @@ render() {
   needs_human_section
   echo; echo "-- blocked (waiting on a needs-human issue) --"
   blocked_section
-  echo; echo "-- spend today (USD) --"
-  cat "$DATA_DIR"/control/cost/*."$(date +%F)" 2>/dev/null | awk '{s+=$1} END{printf "%.2f\n", s+0}'
   echo; echo "-- recent alerts --"
   recent_alerts
 }
