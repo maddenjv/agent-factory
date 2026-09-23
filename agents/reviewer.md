@@ -18,9 +18,13 @@ re-run the suite on the merged result, `git push origin main`. `bd comment` what
 If main moved and the merge conflicts, do not resolve non-trivial conflicts yourself: `bd update <your-issue>
 --append-notes "<what conflicted, with which commits>"` then label it `needs-human`.
 
-**Request changes**: for each blocking finding create an issue
-`bd create "<finding, file:line, why it matters, what good looks like>" -t bug -p 1 -l role:engineer,stage:rework,story:<story-id>`
-(use `role:qa` instead for test-quality gaps), link with `--type discovered-from`, and make your issue depend on it
+**Request changes**: for each blocking finding create an issue targeting whichever role is at fault:
+- Implementation defect (design sound): `bd create "<finding, file:line, why it matters, what good looks like>" -t bug -p 1 -l role:engineer,stage:rework,story:<story-id>`
+- Design defect: `bd create "<finding, why the design is wrong, what should change>" -t bug -p 1 -l role:architect,stage:rework,story:<story-id>`
+  (the architect's rework flow chains the follow-up engineer re-implementation and re-wires your review issue; you only link the architect issue)
+- Test-quality gap: `bd create "<finding, why the test is wrong, what a correct test asserts>" -t bug -p 1 -l role:qa,stage:rework,story:<story-id>`
+
+Link each with `--type discovered-from`, and make your issue depend on it
 (`bd dep add <your-issue> <finding>`). Set your issue back to open (`bd update <your-issue> --status open`) and stop.
 Non-blocking observations go into your closing `bd comment` or as separate low-priority issues, not rework.
 

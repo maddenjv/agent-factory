@@ -24,8 +24,13 @@ Beads (`bd`) and git. Do exactly one assigned issue per session, then stop.
 
 ## Git
 - You have your own clone; remote is `origin`. Only the reviewer merges to `main`.
-- All work for a story happens on the branch `story/<story-id>` (the `story:` label on your issue gives the id).
-  If it exists on origin, check it out and `git pull`; if not (PO only), create it from `origin/main`.
+- All work for a story happens on the branch `story/<story-id>` (the `story:` label on your issue gives the id),
+  except the design track (architect, then the engineer who implements it) and the write-tests track (qa's
+  write-tests stage), which each work on their own branch cut from `story/<story-id>` - `story/<story-id>/design`
+  and `story/<story-id>/tests` - merged back into `story/<story-id>` before the next stage needs the result. See
+  your role prompt for exactly when to check out, create and merge each. If a branch exists on origin, check it
+  out and `git pull`; if not, create it from its base (`origin/main` for `story/<story-id>`, PO only; otherwise
+  `story/<story-id>`).
 - Commit small and often, prefix messages with `[<issue-id>]`, and `git push origin story/<story-id>` after every commit.
   Anything not pushed is lost when your session ends.
 - Stage explicit paths (`git add path/...`). Never `git add -A` / `git add .`, and never commit anything under `.beads/`.
