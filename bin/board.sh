@@ -45,15 +45,47 @@ recent_alerts() {
   done
 }
 
+ready_section() {
+  bd ready --limit 50 --json 2>/dev/null \
+    | jq -r '.[]? | select((.labels // []) | index("needs-human") | not)
+                  | "\(.id)  \((.labels // []) | join(","))  \(.title)"'
+}
+
+needs_human_section() {
+  bd list --json 2>/dev/null \
+    | jq -r '.[]? | select(.status!="closed" and ((.labels // []) | index("needs-human"))) | "\(.id)  \(.title)"'
+}
+
+blocked_section() {
+  bd list --json 2>/dev/null | jq -r '
+    ( [.[] | select(.status != "closed")] ) as $open
+    | ($open | map({key: .id, value: (.labels // [])}) | from_entries) as $labels
+    | ($open | map({key: .id, value: .status}) | from_entries) as $status
+    | $open[]
+    | . as $issue
+    | select(($issue.labels // []) | index("needs-human") | not)
+    | ((.dependencies // [])
+        | map(select(.type == "blocks"))
+        | map(.depends_on_id)
+        | map(select(($status[.] // "closed") != "closed"))
+        | map(select(($labels[.] // []) | index("needs-human")))
+      ) as $blockers
+    | select(($blockers | length) > 0)
+    | "\($issue.id)  waiting on \($blockers | join(","))  \($issue.title)"
+  '
+}
+
 render() {
   clear
   echo "== $(date -u +%FT%TZ) =="
   echo; echo "-- in progress --"
   bd list --json 2>/dev/null | jq -r '.[]? | select(.status=="in_progress") | "\(.id)  [\(.assignee // "-")]  \(.title)"'
   echo; echo "-- ready --"
-  bd ready --limit 50 --json 2>/dev/null | jq -r '.[]? | "\(.id)  \((.labels // []) | join(","))  \(.title)"'
+  ready_section
   echo; echo "-- needs-human (see \`bd show <id>\` for what's needed) --"
-  bd list --json 2>/dev/null | jq -r '.[]? | select(.status!="closed" and ((.labels // []) | index("needs-human"))) | "\(.id)  \(.title)"'
+  needs_human_section
+  echo; echo "-- blocked (waiting on a needs-human issue) --"
+  blocked_section
   echo; echo "-- spend today (USD) --"
   cat "$DATA_DIR"/control/cost/*."$(date +%F)" 2>/dev/null | awk '{s+=$1} END{printf "%.2f\n", s+0}'
   echo; echo "-- recent alerts --"
