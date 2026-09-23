@@ -12,12 +12,12 @@ not this repo's own self-hosting `CLAUDE.md`, which is unrelated):
    a different wiring of the same five issues.
 2. **Branching**: two short-lived *track* branches, both cut from `story/<id>`, one per parallel
    track:
-   - `story/<id>/design` — architect (design) then engineer (implement) commit here.
-   - `story/<id>/tests` — qa (write-tests) commits here.
+   - `story/<id>-design` — architect (design) then engineer (implement) commit here.
+   - `story/<id>-tests` — qa (write-tests) commits here.
 
    Each track's branch is merged into the shared `story/<id>` by whichever role finishes that
    track's *last* stage before the next stage needs the merged result: engineer merges
-   `story/<id>/design` in as part of closing `implement` (AC7); qa merges `story/<id>/tests` in as
+   `story/<id>-design` in as part of closing `implement` (AC7); qa merges `story/<id>-tests` in as
    part of starting `verify` (AC8), before running tests against the merged code. `story/<id>`
    itself is never written to directly by architect or the write-tests qa session — only by
    engineer's and qa's merge commits, and (as today) by the reviewer's final merge to `main`. This
@@ -86,29 +86,29 @@ exactly one blocker (`verify`).
 ### `agents/architect.md` (stage:design)
 After "Read the story..." add the branch step, mirroring the existing `story/<id>` convention:
 ```
-Check out story/<story-id> and pull. Then check out story/<story-id>/design: if it exists on
+Check out story/<story-id> and pull. Then check out story/<story-id>-design: if it exists on
 origin, check it out and pull; otherwise create it from your freshly-pulled story/<story-id>. Do
 all your work (docs/design/<story-id>.md, ARCHITECTURE.md on the first story) on
-story/<story-id>/design, not on story/<story-id> directly — commit and push there. You never touch
+story/<story-id>-design, not on story/<story-id> directly — commit and push there. You never touch
 story/<story-id> itself.
 ```
-Step 5 ("Commit, push...") changes from "close your issue" to "push `story/<story-id>/design`,
+Step 5 ("Commit, push...") changes from "close your issue" to "push `story/<story-id>-design`,
 `bd comment` the key decisions, close your issue" (branch name made explicit so there's no
 ambiguity which branch gets pushed).
 
 Add a new top-level case, **stage:rework** (design was wrong; reviewer found the defect):
 ```
 **stage:rework**
-The issue describes a design defect found by the reviewer. Check out story/<story-id>/design (it
+The issue describes a design defect found by the reviewer. Check out story/<story-id>-design (it
 already exists — reuse it, do not recreate it) and pull story/<story-id> first to make sure you're
 starting from the latest merged code. Fix docs/design/<story-id>.md (and ARCHITECTURE.md if the
-mistake was there), commit, push story/<story-id>/design.
+mistake was there), commit, push story/<story-id>-design.
 
 This always requires re-implementation, so before closing:
 1. Create a new engineer issue: `bd create "Re-implement per corrected design/<story-id>.md: <one-line
    summary of what changed>" -t task -p 2 -l role:engineer,stage:rework,story:<story-id> -d
-   "Check out story/<story-id>/design (pull it — the architect just pushed a fix), re-implement
-   against the corrected docs/design/<story-id>.md, then merge story/<story-id>/design into
+   "Check out story/<story-id>-design (pull it — the architect just pushed a fix), re-implement
+   against the corrected docs/design/<story-id>.md, then merge story/<story-id>-design into
    story/<story-id> before closing, same as the original implement stage. Story:
    docs/stories/<story-id>.md. Conventions: CLAUDE.md." --json`
 2. `bd dep add <new-engineer-issue> <your-issue>` (sequencing: it can't start until your fix is
@@ -126,7 +126,7 @@ them).
 ### `agents/engineer.md` (stage:implement, stage:rework)
 Replace "Check out `story/<story-id>` and pull." with:
 ```
-Check out story/<story-id>/design and pull (the architect pushed the design there — see the
+Check out story/<story-id>-design and pull (the architect pushed the design there — see the
 issue's linked design work). Read docs/stories/<story-id>.md, docs/design/<story-id>.md,
 docs/ARCHITECTURE.md.
 ```
@@ -139,7 +139,7 @@ Add to the end of the **stage:implement** finish step (currently "everything com
 pushed, full suite green..."), before the `bd comment`/close:
 ```
 Before closing: `git checkout story/<story-id> && git pull && git merge --no-ff
-story/<story-id>/design -m "[<your-issue>] Merge story/<story-id>/design into story/<story-id>"`,
+story/<story-id>-design -m "[<your-issue>] Merge story/<story-id>-design into story/<story-id>"`,
 re-run the full suite on the merged result (the merge itself can surface conflicts or breakage
 the design-branch tests didn't catch), then `git push origin story/<story-id>`.
 ```
@@ -152,7 +152,7 @@ filed it) says which:
 **stage:rework**
 The issue describes a defect found by QA or the reviewer; its description says which branch to
 work on:
-- If it names story/<story-id>/design (architect just pushed a corrected design — a design-rework
+- If it names story/<story-id>-design (architect just pushed a corrected design — a design-rework
   follow-up): check it out, pull, re-implement, then merge it into story/<story-id> exactly as in
   stage:implement's finish step above, before closing.
 - Otherwise (an implementation-only defect — design was sound): check out story/<story-id> and
@@ -171,14 +171,14 @@ Change the intro line from "Your issue is `stage:tests` or `stage:verify`." to "
 **stage:tests** gets a branch step and a reworded step 1 constraint (AC2):
 ```
 **stage:tests** (runs BEFORE any implementation exists, and does not require docs/design/<story-id>.md to exist)
-1. Check out story/<story-id> and pull. Then check out story/<story-id>/tests: if it exists on
+1. Check out story/<story-id> and pull. Then check out story/<story-id>-tests: if it exists on
    origin, check it out and pull; otherwise create it from your freshly-pulled story/<story-id>.
    Do all your work there, not on story/<story-id> directly.
 2. Read the story ONLY — not docs/design/<story-id>.md, which may not exist yet or may still be
    changing in parallel. Write acceptance tests derived ONLY from the acceptance criteria - one or
    more tests per criterion, named so the criterion is traceable (e.g. `test_ac3_...`).
 3. Run them: they should fail (or be skipped as not-implemented) for the right reason...
-4. Commit, push story/<story-id>/tests, `bd comment` which criteria map to which tests, close.
+4. Commit, push story/<story-id>-tests, `bd comment` which criteria map to which tests, close.
 ```
 
 **stage:verify** gets a branch/merge step before its existing step 1 (AC8):
@@ -186,13 +186,13 @@ Change the intro line from "Your issue is `stage:tests` or `stage:verify`." to "
 **stage:verify** (implementation is done)
 1. Check out story/<story-id> and pull (this already has the design track's merge — see
    engineer's stage:implement). Merge your write-tests work in: `git merge --no-ff
-   story/<story-id>/tests -m "[<your-issue>] Merge story/<story-id>/tests into story/<story-id>"`,
+   story/<story-id>-tests -m "[<your-issue>] Merge story/<story-id>-tests into story/<story-id>"`,
    push story/<story-id>. Now run the full test suite against this merged result...
    [rest unchanged: exercise the behaviour for real, walk every AC, add edge cases]
 2. All good: commit any added tests, push story/<story-id>, `bd comment` the evidence, close.
 3. Defects: [unchanged — files role:engineer,stage:rework bugs against story/<story-id> directly,
-   since implementation-only defects found here never touch story/<story-id>/design or
-   story/<story-id>/tests]
+   since implementation-only defects found here never touch story/<story-id>-design or
+   story/<story-id>-tests]
 4. [unchanged]
 ```
 
@@ -248,8 +248,8 @@ place that states the "story/<id> is the only branch" rule that this story chang
 ```
 - All work for a story happens on the branch `story/<story-id>`, except the design track
   (architect + the engineer who implements it) and the write-tests track (qa's write-tests stage),
-  which each work on their own branch cut from `story/<story-id>` — `story/<story-id>/design` and
-  `story/<story-id>/tests` respectively — merged back into `story/<story-id>` before the next
+  which each work on their own branch cut from `story/<story-id>` — `story/<story-id>-design` and
+  `story/<story-id>-tests` respectively — merged back into `story/<story-id>` before the next
   stage needs the result. See the role prompt (`agents/<role>.md`) for exactly when to check out,
   create, and merge each. If a branch already exists on origin, check it out and pull; otherwise
   create it from the base named above.
@@ -260,12 +260,12 @@ place that states the "story/<id> is the only branch" rule that this story chang
 | Stage | Branch checked out | Branch pushed to | Merge performed |
 |---|---|---|---|
 | po: new story | `story/<id>` created from `origin/main` | `story/<id>` | — |
-| architect: design | `story/<id>/design` created from `story/<id>` | `story/<id>/design` | — |
-| qa: write-tests | `story/<id>/tests` created from `story/<id>` | `story/<id>/tests` | — |
-| engineer: implement | `story/<id>/design` | `story/<id>/design`, then `story/<id>` | `story/<id>/design` → `story/<id>` |
-| qa: verify | `story/<id>` | `story/<id>` | `story/<id>/tests` → `story/<id>` |
+| architect: design | `story/<id>-design` created from `story/<id>` | `story/<id>-design` | — |
+| qa: write-tests | `story/<id>-tests` created from `story/<id>` | `story/<id>-tests` | — |
+| engineer: implement | `story/<id>-design` | `story/<id>-design`, then `story/<id>` | `story/<id>-design` → `story/<id>` |
+| qa: verify | `story/<id>` | `story/<id>` | `story/<id>-tests` → `story/<id>` |
 | reviewer: review/approve | `story/<id>` | `main` (on approve) | `story/<id>` → `main` |
-| architect: rework (design) | `story/<id>/design` (reused) | `story/<id>/design` | — (engineer's follow-up re-implement issue merges it, same as implement) |
+| architect: rework (design) | `story/<id>-design` (reused) | `story/<id>-design` | — (engineer's follow-up re-implement issue merges it, same as implement) |
 | engineer: rework (impl-only) | `story/<id>` | `story/<id>` | — |
 | qa: rework (tests) | `story/<id>` | `story/<id>` | — |
 
@@ -305,8 +305,8 @@ Flow section rewrite (step 2 and step 4):
 ...
 4. Each agent polls `bd ready --label role:<me>`, claims one issue, runs one fresh Claude session
    on it, and closes it, which unblocks the next stage. Design (architect → engineer) and
-   write-tests (qa) run in parallel on their own branches (`story/<id>/design`,
-   `story/<id>/tests`); each is merged into the shared `story/<id>` before the next stage that
+   write-tests (qa) run in parallel on their own branches (`story/<id>-design`,
+   `story/<id>-tests`); each is merged into the shared `story/<id>` before the next stage that
    needs it (engineer merges design in before implement closes; qa merges tests in at the start of
    verify). Only the reviewer merges `story/<id>` to `main`.
 5. Reviewer/QA defects become `stage:rework` issues targeting whichever role is at fault — engineer
@@ -333,7 +333,7 @@ not by reading the scripts:
    string TBD by whatever new-story.sh ships).
 3. **AC6-AC8 (branching)**: this needs an actual run-through with real architect/qa/engineer
    sessions (or a scripted stand-in that does the same `git` commands the prompts specify) against
-   a scratch project: confirm `story/<id>/design` and `story/<id>/tests` both exist on origin after
+   a scratch project: confirm `story/<id>-design` and `story/<id>-tests` both exist on origin after
    design+write-tests close, confirm neither branch's commits appear on `story/<id>` until
    engineer/qa's respective merge step runs, and confirm `story/<id>` has exactly the two expected
    merge commits (one from engineer, one from qa) by the time verify starts running tests.

@@ -3,17 +3,17 @@
 Your issue is `stage:tests`, `stage:verify`, or `stage:rework`. You never modify production code.
 
 **stage:tests** (runs BEFORE any implementation exists; does not require docs/design/<story-id>.md to exist)
-0. Check out `story/<story-id>` and pull, then check out `story/<story-id>/tests`: if it exists on origin, check
+0. Check out `story/<story-id>` and pull, then check out `story/<story-id>-tests`: if it exists on origin, check
    it out and pull; otherwise create it from `story/<story-id>`. Work there, not on `story/<story-id>`.
 1. Read the story ONLY - not docs/design/<story-id>.md, which may not exist yet or may be changing in parallel.
    Write acceptance tests derived ONLY from the acceptance criteria -
    one or more tests per criterion, named so the criterion is traceable (e.g. `test_ac3_...`).
 2. Run them: they should fail (or be skipped as not-implemented) for the right reason, not because of a typo or broken setup.
    Fix your tests until failures are attributable to missing behaviour.
-3. Commit, push `story/<story-id>/tests`, `bd comment` which criteria map to which tests, close.
+3. Commit, push `story/<story-id>-tests`, `bd comment` which criteria map to which tests, close.
 
 **stage:verify** (implementation is done)
-1. Check out `story/<story-id>` and pull (it has the design track merged in). Merge your write-tests work: `git merge story/<story-id>/tests --no-ff -m "[<your-issue>] Merge tests"`, push
+1. Check out `story/<story-id>` and pull (it has the design track merged in). Merge your write-tests work: `git merge story/<story-id>-tests --no-ff -m "[<your-issue>] Merge tests"`, push
    `story/<story-id>`. Run the full test suite on this merged result. Then exercise the behaviour for real where possible (run the CLI/service, call the
    endpoint) and walk every acceptance criterion; add edge-case and negative tests you think are missing.
 2. All good: commit any added tests, push, `bd comment` the evidence (what you ran, results), close.
