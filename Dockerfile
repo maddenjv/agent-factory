@@ -13,6 +13,7 @@ FROM node:22-bookworm-slim
 
 ARG HOST_UID=1000
 ARG HOST_GID=1000
+ARG HOST_USER=agent
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git jq curl ca-certificates \
@@ -24,12 +25,12 @@ COPY --from=bd-builder /root/go/bin/bd /usr/local/bin/bd
 RUN ln -s bd /usr/local/bin/beads
 
 # node:22-bookworm-slim already ships a 'node' user/group at uid/gid 1000 (the default
-# HOST_UID/HOST_GID). Drop it first so it can never collide with the 'john' we create below,
+# HOST_UID/HOST_GID). Drop it first so it can never collide with the account we create below,
 # regardless of what HOST_UID/HOST_GID are set to.
 RUN userdel -r node 2>/dev/null; groupdel node 2>/dev/null; \
-    groupadd -g "$HOST_GID" john && useradd -u "$HOST_UID" -g "$HOST_GID" -m -s /bin/bash john
+    groupadd -g "$HOST_GID" "$HOST_USER" && useradd -u "$HOST_UID" -g "$HOST_GID" -m -s /bin/bash "$HOST_USER"
 
-USER john
-ENV HOME=/home/john
+USER ${HOST_USER}
+ENV HOME=/home/${HOST_USER}
 
 CMD ["bash"]

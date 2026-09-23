@@ -26,7 +26,11 @@ WIP_LIMIT="${WIP_LIMIT:-2}"
 DAILY_BUDGET_USD="${DAILY_BUDGET_USD:-}"
 PREFLIGHT="${PREFLIGHT:-1}"
 QUOTA_RETRY_INTERVAL="${QUOTA_RETRY_INTERVAL:-900}"  # fallback poll interval when a reset time can't be parsed
-CONTAINER_HOME="${CONTAINER_HOME:-/home/john}"
+CONTAINER_HOME="${CONTAINER_HOME:-$HOME}"
+if [ "$CONTAINER_HOME" != "$HOME" ]; then
+  echo "error: CONTAINER_HOME ($CONTAINER_HOME) != image HOME ($HOME). Set HOST_USER (and CONTAINER_HOME=/home/<HOST_USER>) in .env - re-run bin/init.sh after removing a stale CONTAINER_HOME line - then rebuild: docker compose build agent" >&2
+  exit 1
+fi
 model_var="MODEL_${ROLE^^}"
 MODEL="${!model_var:-}"
 

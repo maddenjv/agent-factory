@@ -15,8 +15,10 @@ if [ ! -f "$AGENT_ENV_FILE" ]; then
   echo "Created $DATA_DIR/.env - defaults to reusing your host ~/.claude login (no key needed); edit it only if you want a separate CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY instead, then re-run bin/init.sh"
   exit 1
 fi
-grep -q '^HOST_UID=' "$AGENT_ENV_FILE" || { echo "HOST_UID=$(id -u)" >> "$AGENT_ENV_FILE"; echo "HOST_GID=$(id -g)" >> "$AGENT_ENV_FILE"; }
-grep -q '^CONTAINER_HOME=' "$AGENT_ENV_FILE" || echo "CONTAINER_HOME=/home/john" >> "$AGENT_ENV_FILE"
+grep -q '^HOST_UID=' "$AGENT_ENV_FILE" || echo "HOST_UID=$(id -u)" >> "$AGENT_ENV_FILE"
+grep -q '^HOST_GID=' "$AGENT_ENV_FILE" || echo "HOST_GID=$(id -g)" >> "$AGENT_ENV_FILE"
+grep -q '^HOST_USER=' "$AGENT_ENV_FILE" || echo "HOST_USER=$(id -un)" >> "$AGENT_ENV_FILE"
+grep -q '^CONTAINER_HOME=' "$AGENT_ENV_FILE" || echo "CONTAINER_HOME=/home/$(id -un)" >> "$AGENT_ENV_FILE"
 
 # Checked here, before anything below creates .agent-factory/ (which would otherwise make this
 # repo look "dirty" to the same check). bin/init-project.sh commits scaffolding directly to main

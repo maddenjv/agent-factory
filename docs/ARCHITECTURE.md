@@ -16,14 +16,14 @@ to compile; "the code" is the `bin/*.sh` scripts, `docker-compose.yml`, the `Doc
     bookworm base, matching the `node:22-bookworm-slim` family already used for the Claude Code
     CLI). Contains: `claude` (`@anthropic-ai/claude-code`, npm), `bd`/`beads`
     (`github.com/steveyegge/beads/cmd/bd`, go install, copied out of a throwaway builder stage),
-    `git`, `jq`, `curl`, `bash`. The `Dockerfile` fixes the account: non-root user `john`, UID/GID
-    from `HOST_UID`/`HOST_GID` build args (so files it writes into host bind mounts are owned by
-    the invoking host user), home `/home/john`. `CONTAINER_HOME` (env var, default `/home/john`,
-    auto-populated into `.env` by `bin/init.sh`) is a separate, dependent setting - used only as
+    `git`, `jq`, `curl`, `bash`. The `Dockerfile` creates the account from the host user: name, UID and
+    GID from `HOST_USER`/`HOST_UID`/`HOST_GID` build args (so files it writes into host bind mounts
+    are owned by the invoking host user), home `/home/$HOST_USER`. `CONTAINER_HOME` (env var,
+    auto-populated into `.env` by `bin/init.sh` as `/home/<host user>`) is a separate, dependent setting - used only as
     the mount-path prefix for the `.claude`/`.ai-dev-kit`/`.agents` volumes in
     `docker-compose.yml` and as the base path `agent-loop.sh`'s host-config sync copies into at
-    startup. It is not an independent way to relocate the account's home: changing it without
-    also editing the `Dockerfile`'s hardcoded `john`/`/home/john` account breaks those mounts.
+    startup. It is not an independent way to relocate the account's home: it must equal
+    `/home/$HOST_USER`, and `agent-loop.sh` refuses to start otherwise.
 - **Tracker**: Beads (`bd`), Dolt-backed, shared across all five containers.
 
 ## Layout
