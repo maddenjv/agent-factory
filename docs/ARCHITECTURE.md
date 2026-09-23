@@ -61,6 +61,9 @@ its own sake. Verification is acceptance-style, run from the host shell:
   and UID/GID inside a running container. `smoke-test.sh` (see README "Before running
   unattended") is the closest thing to an integration test for the multi-agent flow itself
   (concurrent Beads writes under server mode).
+- **Regression suite**: QA's verify stage runs every script under `tests/` (both `tests/<story-id>_test.sh`
+  and the older `tests/acceptance/<story-id>.sh`); a failing older-story script is a regression. New stories
+  should use `tests/<story-id>_test.sh`.
 - **bash script changes**: exercise the script directly (most are idempotent and safe to run
   against a scratch `PROJECT_DIR`); `shellcheck` the diff.
 - **Regression suite**: QA's verify stage runs every script under `tests/` (both `tests/<story-id>_test.sh`,
