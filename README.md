@@ -27,10 +27,14 @@ you type into — is a separate window.
 
 ## Setup
 **Self-contained** — `docker-compose.yml` builds the `agent` image from this repo's own
-`Dockerfile` (the Claude Code + beads toolchain lives there). Its container user is `john`;
-agent-loop.sh runs in place of the image's default entrypoint (a plain shell), and does its own
-host-`~/.claude` sync on startup so each role reuses your logged-in Claude Code plan session — no
-API key or token needed by default.
+`Dockerfile` (the Claude Code + beads toolchain lives there). Its container user is `john`, home
+`/home/john`, fixed by the `Dockerfile`; agent-loop.sh runs in place of the image's default
+entrypoint (a plain shell), and does its own host-`~/.claude` sync on startup so each role reuses
+your logged-in Claude Code plan session — no API key or token needed by default. `bin/init.sh`
+auto-populates `CONTAINER_HOME` (default `/home/john`, matching `john`'s home) into `.env`
+alongside `HOST_UID`/`HOST_GID`; it's a dependent setting used only for `docker-compose.yml`'s
+mount paths and agent-loop.sh's config sync (see docs/ARCHITECTURE.md's "Stack" section), not an
+independent way to relocate the container user's home.
 
 **Two directories, kept separate (see `bin/lib.sh`):**
 - **KIT_DIR** — this repo (`docker-compose.yml`, `bin/`, `agents/`), wherever it's checked out.
