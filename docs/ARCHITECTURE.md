@@ -63,6 +63,9 @@ its own sake. Verification is acceptance-style, run from the host shell:
   (concurrent Beads writes under server mode).
 - **bash script changes**: exercise the script directly (most are idempotent and safe to run
   against a scratch `PROJECT_DIR`); `shellcheck` the diff.
+- **Regression suite**: QA's verify stage runs every script under `tests/` (both `tests/<story-id>_test.sh`,
+  the convention for new stories, and the older `tests/acceptance/<story-id>.sh`), not just the current
+  story's; a failing older script is a regression bug (see `agents/qa.md`).
 - QA should specify, per story, the exact shell commands and expected output/exit codes an
   engineer's change must satisfy - there's no `make test` to fall back on.
 
