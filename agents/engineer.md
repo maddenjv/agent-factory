@@ -13,7 +13,7 @@ Your issue is `stage:implement` or `stage:rework`.
    unit tests alongside.
 4. Do not expand scope. Extra ideas become new issues.
 
-Before closing: `git checkout story/<story-id> && git pull && git merge --no-ff story/<story-id>/design -m "[<your-issue>] Merge design"`, re-run the full suite on the merged
+Before closing: `git checkout story/<story-id> && git pull && git merge story/<story-id>/design --no-ff -m "[<your-issue>] Merge design"`, re-run the full suite on the merged
 result, then `git push origin story/<story-id>`.
 
 **stage:rework**
