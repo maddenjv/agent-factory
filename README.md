@@ -17,13 +17,32 @@ you type into — is a separate window.
 
 ## Flow
 1. You: `feature.sh "Title" "description"` (from the **ops** window). Creates an issue labelled `role:po`.
-2. **po** writes `docs/stories/<id>.md` on branch `story/<id>` and runs `new-story.sh`, which creates the chain
-   `design -> tests -> implement -> verify -> review` linked with `blocks` dependencies.
+2. **po** writes `docs/stories/<id>.md` on branch `story/<id>` and runs `new-story.sh`, which creates two issues
+   with no dependency on each other - design (architect) and write-tests (qa, from the acceptance criteria only,
+   not the design) - plus implement (engineer, depends on design), verify (qa, depends on BOTH implement and
+   write-tests) and review (reviewer, depends on verify).
+
+```mermaid
+flowchart LR
+    po[po] --> architect[architect: design]
+    po --> qa[qa: write tests / verify]
+    architect --> engineer[engineer: implement]
+    engineer --> reviewer[reviewer]
+    qa --> reviewer
+    reviewer -- "design defect" --> architect
+    reviewer -- "implementation defect" --> engineer
+    reviewer -- "test defect" --> qa
+```
 3. With `HUMAN_APPROVE_STORIES=1` the design issue starts labelled `needs-human`: read the story, then `approve.sh <design-issue>`.
 4. Each agent polls `bd ready --label role:<me>`, claims one issue, runs one fresh Claude session on it, and
-   closes it, which unblocks the next stage. Everyone commits to `story/<id>`; only the reviewer merges to `main`.
-5. QA/reviewer defects become `stage:rework` issues for the engineer that block the QA/review issue; it re-opens
-   when they close. After 2 rework rounds a story goes to `needs-human`.
+   closes it, which unblocks the next stage. Design (architect, then engineer) and write-tests (qa) run in parallel
+   on their own branches (`story/<id>/design`, `story/<id>/tests`); each is merged into the shared `story/<id>`
+   before the next stage needs it (engineer merges design before implement closes; qa merges tests at the start of
+   verify). Only the reviewer merges `story/<id>` to `main`.
+5. QA/reviewer defects become `stage:rework` issues for whichever role is at fault - engineer (implementation
+   only), architect (design; this re-triggers an engineer re-implementation), or qa (tests; engineer only if the
+   corrected tests then fail). Other roles' work is left untouched. The blocked QA/review issue re-opens when they
+   close. After 2 rework rounds a story goes to `needs-human`.
 
 ## Setup
 **Self-contained** — `docker-compose.yml` builds the `agent` image from this repo's own
