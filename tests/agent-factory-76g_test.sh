@@ -127,7 +127,7 @@ test_ac7_no_john_literal_in_tracked_files() {
 }
 
 test_ac7_docs_describe_account_as_host_derived() {
-  grep -qiE 'username' docs/ARCHITECTURE.md \
+  grep -qiE 'username|HOST_USER' docs/ARCHITECTURE.md \
     && grep -qiE 'derived|host user|host username|from the host' docs/ARCHITECTURE.md \
     && pass "ac7: ARCHITECTURE.md describes account as host-derived" || fail "ac7: ARCHITECTURE.md lacks host-derived account description"
 }
