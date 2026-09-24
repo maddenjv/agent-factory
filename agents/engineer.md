@@ -20,6 +20,11 @@ result, then `git push origin story/<story-id>`.
 The issue describes a defect found by QA or the reviewer; its description says which branch to work on:
 - If it names `story/<story-id>-design` (the architect pushed a corrected design): check it out, pull,
   re-implement, then merge it into `story/<story-id>` exactly as in the stage:implement finish step above.
+- If the issue has label `merge-conflict` (or its title starts with "Merge conflict:"): check out `story/<story-id>`,
+  pull, `git fetch origin main && git merge origin/main` (no rebase: the branch is shared), resolve conflicts preserving
+  both sides' intent (textual resolution only; never change QA acceptance-test assertions), re-run the full suite and
+  linter, commit, and push `story/<story-id>`. No regression test needed. If it cannot be resolved sensibly, use the
+  `needs-human` fallback below.
 - Otherwise (implementation-only defect): check out `story/<story-id>`, pull, and commit the fix there directly.
 Reproduce it, fix it with a regression test, run the full suite, push.
 
