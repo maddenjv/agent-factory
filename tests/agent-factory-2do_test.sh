@@ -200,13 +200,15 @@ $RESULT_OUT"
 
 # --- AC5: alerts other than needs-human/usage-limit are unaffected, byte-for-byte ---
 test_ac5_other_alert_types_unaffected() {
+  local ts
+  ts="$(now_ts '5 minutes ago')"  # fresh: 47q expires non-needs-human alerts older than ALERT_MAX_AGE_MINUTES
   local lines=(
-    "2026-09-23T08:00:00Z [engineer] circuit breaker: git sync failing; stopping"
-    "2026-09-23T08:00:01Z [engineer] circuit breaker: 5 consecutive failures; stopping engineer"
-    "2026-09-23T08:00:02Z [engineer] daily budget reached (42.00 USD); pausing 3600s"
-    "2026-09-23T08:00:03Z [engineer] cannot clone git@example.com:org/repo.git"
-    "2026-09-23T08:00:04Z [engineer] preflight: bd cannot reach the Beads database"
-    "2026-09-23T08:00:05Z [engineer] preflight: claude failed to run (check API key/token): boom"
+    "$ts [engineer] circuit breaker: git sync failing; stopping"
+    "$ts [engineer] circuit breaker: 5 consecutive failures; stopping engineer"
+    "$ts [engineer] daily budget reached (42.00 USD); pausing 3600s"
+    "$ts [engineer] cannot clone git@example.com:org/repo.git"
+    "$ts [engineer] preflight: bd cannot reach the Beads database"
+    "$ts [engineer] preflight: claude failed to run (check API key/token): boom"
   )
   local joined
   # printf -v (not "$(...)") so the trailing newline after the last line survives - command
