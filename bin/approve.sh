@@ -31,7 +31,7 @@ for id in "${ids[@]}"; do
   # practice: the note said "run approve.sh", the architect read that as still-pending even after
   # approve.sh had already run, and stopped twice, hitting the attempt cap).
   if [ "$have_msg" -eq 1 ]; then
-    note="Human answer via approve.sh by $(whoami) at $(date -u +%FT%TZ): $msg - Approved; any note above is stale; proceed using this answer."
+    note="Human answer via approve.sh by $(whoami) at $(date -u +%FT%TZ): $msg"$'\n'"Approved; any note above is stale; proceed using this answer."
   else
     note="Approved via approve.sh by $(whoami) at $(date -u +%FT%TZ) - any note above is stale; proceed."
   fi
