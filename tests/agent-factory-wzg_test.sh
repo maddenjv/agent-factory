@@ -222,6 +222,40 @@ $RESULT_OUT"
   [ "$ok" = 1 ] && pass "ac3: only the most recent of two successive-start preflight alerts for the same agent is shown"
 }
 
+# --- Edge case (AC1/AC3 generalization): an exit-type preflight alert (bd-cannot-reach or
+#     claude-failed - both `exit 3` agent-loop.sh immediately, per bin/agent-loop.sh:283,294) is
+#     necessarily from a dead process. Any later alert line logged for that same agent - even a
+#     "usage limit hit" preflight retry, which loops/sleeps within its own process rather than
+#     exiting - is therefore proof by construction that a new process has since started, because
+#     the earlier, exit-type start could not have logged it. AC1 says the earlier alert must stop
+#     appearing once "that same agent has since started again", with no carve-out for what the
+#     new start's own preflight outcome is (still retrying on a usage limit counts as started).
+test_edge_exit_type_alert_dropped_when_newer_usage_limit_alert_for_same_agent() {
+  local ts_old ts_new line_old line_new
+  ts_old="$(now_ts '90 seconds ago')"
+  ts_new="$(now_ts '10 seconds ago')"
+  line_old="$ts_old [engineer] preflight: bd cannot reach the Beads database"
+  line_new="$ts_new [engineer] preflight: usage limit hit (5-hour limit reached); waiting 100000s before retrying startup"
+  run_recent_alerts "$line_old
+$line_new
+"
+  if [ "$RESULT_RC" -ne 0 ]; then
+    fail "edge (exit-type superseded by newer usage-limit alert): $(unexpected_rc_msg)"; return
+  fi
+  local ok=1
+  if echo "$RESULT_OUT" | grep -qF "$line_old"; then
+    fail "edge: an old bd-cannot-reach alert is still shown even though a newer usage-limit-hit alert for the same agent proves a later process has since started (bd-cannot-reach always exits the process, so the newer line cannot be from the same start):
+$RESULT_OUT"
+    ok=0
+  fi
+  if ! echo "$RESULT_OUT" | grep -qF "$line_new"; then
+    fail "edge: the newer usage-limit-hit alert itself is missing (it should still be shown/hidden purely by its own wait-window rule):
+$RESULT_OUT"
+    ok=0
+  fi
+  [ "$ok" = 1 ] && pass "edge: an exit-type preflight alert is dropped once a newer alert of any kind exists for the same agent"
+}
+
 # --- AC4: with alerts for two different agents, one agent restarting affects only that agent's
 #     own preflight alert(s). ---
 test_ac4_restart_affects_only_that_agents_own_alerts() {
@@ -340,6 +374,7 @@ test_ac1_claude_failed_dropped_after_restart
 test_ac1_dropped_even_when_very_fresh
 test_ac2_kept_when_agent_has_not_restarted_since
 test_ac3_only_most_recent_of_two_preflight_alerts_shown
+test_edge_exit_type_alert_dropped_when_newer_usage_limit_alert_for_same_agent
 test_ac4_restart_affects_only_that_agents_own_alerts
 test_ac5_non_preflight_families_unaffected_by_restart
 test_ac6_no_restart_old_alert_still_dropped_by_age_cutoff
