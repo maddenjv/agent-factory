@@ -46,7 +46,7 @@ recent_alerts() {
     fi
 
     alert_epoch=$(date -d "$ts" +%s 2>/dev/null) || { echo "$line"; continue; }
-    (( now - alert_epoch <= max_age_s )) && echo "$line"
+    if (( now - alert_epoch <= max_age_s )); then echo "$line"; fi
   done
 }
 
