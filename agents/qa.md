@@ -46,7 +46,8 @@ Your issue is `stage:tests`, `stage:verify`, or `stage:rework`. You never modify
 **stage:rework** (the reviewer found a problem with the tests themselves; design was sound - do not touch
 docs/design/<story-id>.md)
 1. Check out `story/<story-id>` and pull. If the issue has label `merge-conflict`, run `git fetch origin main && git merge origin/main`,
-   resolve the test-file conflicts, re-run the full suite, push, `bd comment`, close. Otherwise fix the tests directly
+   resolve the test-file conflicts, re-run the full suite, push, `bd comment`, close. If it cannot be resolved:
+   `bd update <your-issue> --append-notes "<why>"` (mandatory), `bd label add <your-issue> conflict-unresolvable`, stop (not `needs-human`; `agent-loop.sh` restarts the story). Otherwise fix the tests directly
    there (both tracks are already merged).
 2. Run the corrected tests against the implementation in `story/<story-id>`.
 3. If they pass: commit, push, `bd comment` what was wrong and how you fixed it, close.
