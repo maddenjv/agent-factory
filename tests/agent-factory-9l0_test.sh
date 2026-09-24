@@ -88,7 +88,7 @@ test_ac4_init_appends_container_home_idempotently() {
   # Extract the single statement that appends CONTAINER_HOME (mirrors the existing
   # HOST_UID/HOST_GID append at bin/init.sh:13 - see docs/design/agent-factory-9l0.md).
   local append_line
-  append_line="$(grep -E "grep -q '\^CONTAINER_HOME=' .*>>.*\.env" bin/init.sh || true)"
+  append_line="$(grep -E "grep -q '\^CONTAINER_HOME=' .*>>.*AGENT_ENV_FILE" bin/init.sh || true)"
   if [ -z "$append_line" ]; then
     fail "ac4: bin/init.sh has no idempotent 'grep -q ... CONTAINER_HOME ... >> .env' append statement (see bin/init.sh:13's HOST_UID/HOST_GID pattern for the expected shape)"
     return
@@ -99,8 +99,8 @@ test_ac4_init_appends_container_home_idempotently() {
   trap 'rm -rf "$tmp"' RETURN
   printf 'HOST_UID=1000\nHOST_GID=1000\n' > "$tmp/.env"
 
-  ( KIT_DIR="$tmp"; eval "$append_line" )
-  ( KIT_DIR="$tmp"; eval "$append_line" )  # run twice: must not duplicate the line
+  ( AGENT_ENV_FILE="$tmp/.env"; eval "$append_line" )
+  ( AGENT_ENV_FILE="$tmp/.env"; eval "$append_line" )  # run twice: must not duplicate the line
 
   local count value
   count="$(grep -c '^CONTAINER_HOME=' "$tmp/.env" || true)"
