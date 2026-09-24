@@ -76,8 +76,17 @@ release_stale() {  # anything still in_progress under our name at startup is lef
 }
 
 # ---------- throttles ----------
-in_flight() {  # stories whose review issue is not yet closed
-  bd list --json 2>/dev/null | jq '[ .[]? | select(.status != "closed") | select((.labels // []) | index("role:reviewer")) ] | length' 2>/dev/null
+in_flight() {  # stories whose review issue is not yet closed, minus those stalled on a needs-human issue
+  bd list --json 2>/dev/null | jq '
+    [ .[]? | select(.status != "closed") ] as $open
+    | ($open | map({key: .id, value: ((.labels // []) | index("needs-human") != null)}) | from_entries) as $nh
+    | ( [ $open[]
+          | select(($nh[.id]) or ([ (.dependencies // [])[] | select(.type == "blocks") | $nh[.depends_on_id] ] | any))
+          | (.labels // [])[] | select(startswith("story:")) ] | unique ) as $stalled
+    | [ $open[]
+        | select((.labels // []) | index("role:reviewer"))
+        | select(([ (.labels // [])[] | select(startswith("story:")) ] | any(. as $s | $stalled | index($s))) | not)
+      ] | length' 2>/dev/null
 }
 wip_ok() { [ "$ROLE" != "po" ] || [ "$(in_flight)" -lt "$WIP_LIMIT" ] 2>/dev/null; }
 
