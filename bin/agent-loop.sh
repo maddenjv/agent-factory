@@ -31,8 +31,21 @@ if [ "$CONTAINER_HOME" != "$HOME" ]; then
   echo "error: CONTAINER_HOME ($CONTAINER_HOME) != image HOME ($HOME). Set HOST_USER (and CONTAINER_HOME=/home/<HOST_USER>) in .env - re-run bin/init.sh after removing a stale CONTAINER_HOME line - then rebuild: docker compose build agent" >&2
   exit 1
 fi
-model_var="MODEL_${ROLE^^}"
+# ---------- model resolution ----------
+# Two tiers: team-lead (coordination/triage) gets the most capable model; the five execution
+# roles get a lower-capability default. Change these two values if the mapping drifts - no other
+# call site hardcodes a model name. An explicit MODEL_<ROLE> (below) always overrides its tier.
+TIER_TEAM_LEAD="${TIER_TEAM_LEAD:-opus}"
+TIER_STANDARD="${TIER_STANDARD:-sonnet}"
+
+# ROLE can contain a hyphen (team-lead); "-" is not legal in a bash variable name, so sanitize
+# before building the indirect-expansion name (MODEL_TEAM_LEAD, not MODEL_TEAM-LEAD).
+model_key="${ROLE^^}"; model_key="${model_key//-/_}"
+model_var="MODEL_${model_key}"
 MODEL="${!model_var:-}"
+if [ -z "$MODEL" ]; then
+  if [ "$ROLE" = "team-lead" ]; then MODEL="$TIER_TEAM_LEAD"; else MODEL="$TIER_STANDARD"; fi
+fi
 
 mkdir -p "$LOGDIR" "$STATE" "$CONTROL/cost"
 # shellcheck disable=SC1091
@@ -297,7 +310,7 @@ if [ "$PREFLIGHT" = 1 ]; then
 fi
 
 release_stale
-log "started: role=$ROLE model=${MODEL:-default} max_turns=$MAX_TURNS timeout=$ITERATION_TIMEOUT"
+log "started: role=$ROLE model=$MODEL max_turns=$MAX_TURNS timeout=$ITERATION_TIMEOUT"
 
 # ---------- main loop ----------
 fails=0
