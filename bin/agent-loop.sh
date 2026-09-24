@@ -188,10 +188,19 @@ run_agent() {  # sets LAST_RUN_QUOTA_MSG (empty unless this run hit a usage limi
 }
 
 # ---------- outcome handling ----------
+is_conflict_rework() { has_label "$1" stage:rework && has_label "$1" merge-conflict; }
+restart_story() {  # restart_story ID REASON - see bin/restart-story.sh
+  "$KIT_DIR/bin/restart-story.sh" "$1" "$2" >>"$LOGDIR/loop.log" 2>&1 \
+    && alert "$1: merge-conflict rework failed ($2); story restarted" \
+    || alert "$1: restart-story.sh failed ($2); needs a human"
+}
 handle_outcome() {  # 0 = the agent did something legitimate with the issue, 1 = it did not
   local id=$1 st
   st=$(issue_field "$id" status)
   if [ "$st" = "closed" ]; then log "$id closed (handed off)"; return 0; fi
+  if is_conflict_rework "$id" && { has_label "$id" conflict-unresolvable || has_label "$id" needs-human; }; then
+    restart_story "$id" unresolvable; return 0
+  fi
   if has_label "$id" needs-human; then
     # CLAUDE.project.md tells the agent to --append-notes what it needs BEFORE labelling
     # needs-human - but that's an instruction to an LLM, not a guarantee. Back it up mechanically:
@@ -221,6 +230,7 @@ record_failure() {
     bd update "$id" --append-notes "agent-loop: not completed after $n attempt(s) by $AGENT_ID (session ended without closing or explaining why). Transcript: $LOGDIR/$(date +%F).$id.jsonl" >/dev/null 2>&1
     bd label add "$id" needs-human >/dev/null 2>&1
     alert "$id not completed after $n attempts; labelled needs-human"
+    if is_conflict_rework "$id"; then restart_story "$id" attempt-cap; fi
   else
     log "$id not completed (attempt $n/$MAX_ATTEMPTS_PER_ISSUE); released for retry"
   fi

@@ -3,7 +3,9 @@
 Your issue is `stage:implement` or `stage:rework`.
 
 **stage:implement**
-0. Check out `story/<story-id>-design` and pull (the architect pushed the design there).
+0. If your issue has label `restarted`, follow the branch/merge/push steps in its description instead of
+   step 0 and the "Before closing" merge (the description is authoritative).
+   Otherwise check out `story/<story-id>-design` and pull (the architect pushed the design there).
 1. Read `docs/stories/<story-id>.md`, `docs/design/<story-id>.md`, `docs/ARCHITECTURE.md` and the acceptance tests QA already committed.
 2. Implement the design so the acceptance tests pass. Run the full test suite and the linter/formatter defined in
    ARCHITECTURE.md before every push. Small commits.
@@ -23,8 +25,10 @@ The issue describes a defect found by QA or the reviewer; its description says w
 - If the issue has label `merge-conflict` (or its title starts with "Merge conflict:"): check out `story/<story-id>`,
   pull, `git fetch origin main && git merge origin/main` (no rebase: the branch is shared), resolve conflicts preserving
   both sides' intent (textual resolution only; never change QA acceptance-test assertions), re-run the full suite and
-  linter, commit, and push `story/<story-id>`. No regression test needed. If it cannot be resolved sensibly, use the
-  `needs-human` fallback below.
+  linter, commit, and push `story/<story-id>`. No regression test needed. If it cannot be resolved sensibly:
+  `bd update <your-issue> --append-notes "<why it cannot be resolved>"` (mandatory), then
+  `bd label add <your-issue> conflict-unresolvable` and stop. Do NOT label it `needs-human` or close it;
+  `agent-loop.sh` restarts the story.
 - Otherwise (implementation-only defect): check out `story/<story-id>`, pull, and commit the fix there directly.
 Reproduce it, fix it with a regression test, run the full suite, push.
 
