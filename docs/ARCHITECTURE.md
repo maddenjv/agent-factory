@@ -6,6 +6,14 @@ project, coordinated through Beads (`bd`) and git. There is no application sourc
 to compile; "the code" is the `bin/*.sh` scripts, `docker-compose.yml`, the `Dockerfile` for the
 `agent` image, and the per-role prompts under `agents/`.
 
+A sixth role, `team-lead`, triages issues labelled `needs-team-lead`: `agent-loop.sh` finds its
+work via that label directly (not a `role:team-lead` label the other five use), since the whole
+point is investigating issues that may be blocked or otherwise not `bd ready`. It reroutes stuck
+work to the correct role/stage, fixes it directly, or escalates to `needs-human` - see
+`agents/team-lead.md`. It isn't part of `bin/start.sh`'s tmux layout yet (`agent-factory-uhc`) or
+given a non-default model tier yet (`agent-factory-250`); until those land, run it by hand:
+`ROLE=team-lead docker compose -f "$KIT_DIR/docker-compose.yml" run --rm --name factory-team-lead agent`.
+
 ## Stack
 - **Orchestration**: `bash` scripts under `bin/` (`lib.sh` holds shared helpers; every other
   script sources it). No other scripting language is introduced without a strong reason.

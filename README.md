@@ -97,6 +97,7 @@ uses server mode, but verify on your bd version.
 | Watch an agent | its pane in the `agents` window (rendered tool calls/text; Ctrl-b o to cycle, Ctrl-b q to jump by number); raw stream in `<project>/.agent-factory/logs/<role>/*.jsonl` |
 | Review-by-exception | `needs-human` list on the board; `bd show <id>` — the agent (or agent-loop.sh itself, on an attempt-cap/failure escalation) leaves a note on the issue explaining exactly what it needs; set `NOTIFY_URL` for push alerts |
 | Unstick an issue | answer what the issue's note asked for, then `approve.sh <id> -m "<answer>"` (or plain `approve.sh <id>`) |
+| Ask team-lead to triage a stuck issue | `bd label add <id> needs-team-lead`, then `ROLE=team-lead docker compose -f "$KIT_DIR/docker-compose.yml" run --rm --name factory-team-lead agent` from the `ops` window (not in the default `agents` pane layout yet - see `docs/ARCHITECTURE.md`) |
 | Pause / resume | `bin/stop.sh` (graceful) / `bin/stop.sh clear` then `bin/start.sh` — run from the same project directory |
 | Hard stop | `bin/stop.sh now` |
 | Restart one agent | `tmux list-panes -t factory:agents` for its index, then `tmux respawn-pane -k -t factory:agents.<index>` |
