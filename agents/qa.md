@@ -14,8 +14,26 @@ Your issue is `stage:tests`, `stage:verify`, or `stage:rework`. You never modify
 
 **stage:verify** (implementation is done)
 1. Check out `story/<story-id>` and pull (it has the design track merged in). Merge your write-tests work: `git merge story/<story-id>-tests --no-ff -m "[<your-issue>] Merge tests"`, push
-   `story/<story-id>`. Run the full test suite on this merged result. Then exercise the behaviour for real where possible (run the CLI/service, call the
+   `story/<story-id>`. Run the full accumulated suite on this merged result (see step 1a). Then exercise the behaviour for real where possible (run the CLI/service, call the
    endpoint) and walk every acceptance criterion; add edge-case and negative tests you think are missing.
+1a. **Full suite.** Run every test script under `tests/` (all stories', not only this story's, including
+   `tests/acceptance/`): `find tests -type f \( -name '*_test.sh' -o -path 'tests/acceptance/*.sh' \) | sort`,
+   then `bash <script>` for each from the repo root. Keep going after a failure. Read failing output before
+   classifying it (scripts may need `bd`/docker, so a failure can be environmental). Record PASS/FAIL per script
+   in your `bd comment`. Classify each failure by the story id in its filename:
+   - This story's script: an ordinary defect (step 3).
+   - Another story's script: a **regression**. File
+     `bd create "Regression: tests/<file> fails - <behaviour it protects>" -t bug -p 1 -l role:engineer,stage:rework,story:<story-id>`;
+     the description names the failing script, the failing assertion output, and the behaviour it protects (read the
+     script header / `docs/stories/<old-id>.md`). Link and block as in step 3; do not close the verify issue.
+   - Exception: if the older script fails because this story deliberately changes that earlier story's behaviour
+     (compare against this story's acceptance criteria), never edit or delete the old test. Say so explicitly in the
+     bug description; if unclear whether the change is intended, `bd update <your-issue> --append-notes "<why>"`
+     and label it `needs-human`.
+   - If the story touches quota/usage-limit handling (limit/reset code in `bin/agent-loop.sh`), the usage-limit test
+     from agent-factory-stg (`tests/agent-factory-stg_test.sh`) must be among the scripts run; if it is absent that
+     is a defect (or `needs-human`), and if it fails, file a regression naming the usage-limit wait-for-reset behaviour.
+   When closing, the handoff comment states how many scripts ran and that none failed ("N scripts ran, 0 failed").
 2. All good: commit any added tests, push, `bd comment` the evidence (what you ran, results), close.
 3. Defects: for each, create an issue `bd create "<what is wrong + repro>" -t bug -p 1 -l role:engineer,stage:rework,story:<story-id>`,
    link it (`bd dep add <bug> <your-issue> --type discovered-from`), and make your verify issue depend on it
