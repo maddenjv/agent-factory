@@ -76,8 +76,17 @@ release_stale() {  # anything still in_progress under our name at startup is lef
 }
 
 # ---------- throttles ----------
-in_flight() {  # stories whose review issue is not yet closed
-  bd list --json 2>/dev/null | jq '[ .[]? | select(.status != "closed") | select((.labels // []) | index("role:reviewer")) ] | length' 2>/dev/null
+in_flight() {  # stories whose review issue is not yet closed, minus those stalled on a needs-human issue
+  bd list --json 2>/dev/null | jq '
+    [ .[]? | select(.status != "closed") ] as $open
+    | ($open | map({key: .id, value: ((.labels // []) | index("needs-human") != null)}) | from_entries) as $nh
+    | ( [ $open[]
+          | select(($nh[.id]) or ([ (.dependencies // [])[] | select(.type == "blocks") | $nh[.depends_on_id] ] | any))
+          | (.labels // [])[] | select(startswith("story:")) ] | unique ) as $stalled
+    | [ $open[]
+        | select((.labels // []) | index("role:reviewer"))
+        | select(([ (.labels // [])[] | select(startswith("story:")) ] | any(. as $s | $stalled | index($s))) | not)
+      ] | length' 2>/dev/null
 }
 wip_ok() { [ "$ROLE" != "po" ] || [ "$(in_flight)" -lt "$WIP_LIMIT" ] 2>/dev/null; }
 
@@ -88,10 +97,10 @@ budget_ok()   { [ -z "$DAILY_BUDGET_USD" ] || awk -v s="$(spent_today)" -v b="$D
 # Claude Code plan usage limits (not $DAILY_BUDGET_USD, which is our own spend cap) are a
 # temporary, external condition, not a bug in the issue or the agent's work on it - so hitting
 # one must never count as a failed attempt (record_failure/MAX_ATTEMPTS_PER_ISSUE) or trip the
-# consecutive-failure circuit breaker. Detected by text match since the CLI reports this as a
-# plain diagnostic line, not a structured stream-json error - but ONLY ever scanned against the
-# CLI's own stderr for this run (run_agent passes just $errfile, never $logfile). The jsonl
-# transcript holds the agent's own conversation, including whatever it read - and a false match
+# consecutive-failure circuit breaker. Detected by text match, but ONLY against trusted sources:
+# the CLI's own stderr for this run (quota_hit_message, given just $errfile) and the final
+# is_error `result` event of this run's stream-json (quota_hit_from_stream, given this run's
+# own $outfile, never the cumulative $logfile). The jsonl transcript as raw text holds the agent's own conversation, including whatever it read - and a false match
 # there once genuinely happened: the agent read this very file, whose text a few lines up
 # literally contains the words "usage limit", and got treated as a real hit. Matching against the
 # raw stderr of a single `claude` invocation can't false-positive on a file the agent chose to
@@ -100,6 +109,16 @@ budget_ok()   { [ -z "$DAILY_BUDGET_USD" ] || awk -v s="$(spent_today)" -v b="$D
 quota_hit_message() {  # quota_hit_message FILE -> first matching line (bounded, single-line), or empty
   grep -ihEo 'hit your [a-z]+ limit[^"]{0,200}|usage limit[^"]{0,200}|limit reached[^"]{0,200}|rate limit exceeded[^"]{0,200}' "$@" 2>/dev/null \
     | head -1 | tr -d '\r' | tr '\n\t' '  ' | cut -c1-200
+}
+
+quota_hit_from_stream() {  # quota_hit_from_stream FILE -> limit message if the run ENDED in an error result, or empty
+  # The CLI reports a session limit only on stdout: a synthetic assistant message carrying the
+  # text, then a result event with is_error:true. Only "hit your ... limit" wording is accepted.
+  jq -Rn '[inputs | fromjson? | select(type=="object")] as $e
+          | ($e | map(select(.type=="result")) | last) as $r
+          | select($r.is_error == true)
+          | ($r.result // ""), ($e | map(select(.type=="assistant")) | last | [.message.content[]? | .text? // empty] | join(" "))' "$1" 2>/dev/null \
+    | grep -ihEo 'hit your [a-z]+ limit[^"]{0,200}' | head -1 | tr -d '\r' | tr '\n\t' '  ' | cut -c1-200
 }
 
 usage_limit_wait_seconds() {  # usage_limit_wait_seconds "<message text>" -> seconds to sleep
@@ -116,6 +135,8 @@ usage_limit_wait_seconds() {  # usage_limit_wait_seconds "<message text>" -> sec
     now=$(date +%s)
     epoch=$(date -d "today $h:$m" +%s 2>/dev/null) || epoch=""
     if [ -n "$epoch" ]; then
+      # just-passed reset (clock skew) -> retry shortly rather than rolling to tomorrow
+      if [ "$epoch" -le "$now" ] && [ $((now - epoch)) -lt 600 ]; then echo 60; return; fi
       [ "$epoch" -le "$now" ] && epoch=$((epoch + 86400))  # already passed today -> tomorrow
       wait=$((epoch - now + 60))                            # +60s buffer past the reset
       if [ "$wait" -gt 0 ] && [ "$wait" -le 86400 ]; then echo "$wait"; return; fi
@@ -150,19 +171,20 @@ build_prompt() {
 }
 
 run_agent() {  # sets LAST_RUN_QUOTA_MSG (empty unless this run hit a usage limit)
-  local id=$1 logfile errfile cost
+  local id=$1 logfile errfile outfile cost
   logfile="$LOGDIR/$(date +%F).$id.jsonl"
-  errfile=$(mktemp)
+  errfile=$(mktemp); outfile=$(mktemp)
   local args=(-p "$(build_prompt "$id")" --dangerously-skip-permissions --max-turns "$MAX_TURNS"
               --output-format stream-json --verbose)
   [ -n "$MODEL" ] && args+=(--model "$MODEL")
   ( cd "$REPO" && timeout "$ITERATION_TIMEOUT" claude "${args[@]}" 2>"$errfile" ) \
-    | tee -a "$logfile" | jq -R -r --unbuffered "$RENDER" 2>/dev/null
+    | tee -a "$logfile" "$outfile" | jq -R -r --unbuffered "$RENDER" 2>/dev/null
   cost=$(jq -rs '[.[] | select(.type=="result")] | last | .total_cost_usd // 0' "$logfile" 2>/dev/null)
   echo "${cost:-0}" >> "$CONTROL/cost/$ROLE.$(date +%F)"
   cat "$errfile" >> "$LOGDIR/claude-err.log"
-  LAST_RUN_QUOTA_MSG=$(quota_hit_message "$errfile")   # stderr only - never the jsonl transcript
-  rm -f "$errfile"
+  LAST_RUN_QUOTA_MSG=$(quota_hit_message "$errfile")   # stderr, else this run's final error result
+  [ -n "$LAST_RUN_QUOTA_MSG" ] || LAST_RUN_QUOTA_MSG=$(quota_hit_from_stream "$outfile")
+  rm -f "$errfile" "$outfile"
 }
 
 # ---------- outcome handling ----------

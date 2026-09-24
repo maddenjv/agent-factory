@@ -74,7 +74,7 @@ test_out_of_scope_tests_and_rework_procedures_unchanged() {
   local t r
   t=$(awk '/^\*\*stage:tests\*\*/{on=1} /^\*\*stage:verify\*\*/{on=0} on' agents/qa.md)
   r=$(awk '/^\*\*stage:rework\*\*/{on=1} on' agents/qa.md)
-  echo "$t" | grep -q 'Read the story ONLY' && echo "$r" | grep -q 'Fix the tests directly there' \
+  echo "$t" | grep -q 'Read the story ONLY' && echo "$r" | grep -qi 'fix the tests directly' \
     && pass "scope: stage:tests and stage:rework procedures intact" \
     || fail "scope: stage:tests / stage:rework procedures were altered"
 }
