@@ -16,7 +16,7 @@ ARG HOST_GID=1000
 ARG HOST_USER=agent
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git jq curl ca-certificates \
+      git jq curl ca-certificates shellcheck \
     && rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g @anthropic-ai/claude-code

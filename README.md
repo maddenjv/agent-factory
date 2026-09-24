@@ -36,7 +36,7 @@ flowchart LR
 3. With `HUMAN_APPROVE_STORIES=1` the design issue starts labelled `needs-human`: read the story, then `approve.sh <design-issue>`.
 4. Each agent polls `bd ready --label role:<me>`, claims one issue, runs one fresh Claude session on it, and
    closes it, which unblocks the next stage. Design (architect, then engineer) and write-tests (qa) run in parallel
-   on their own branches (`story/<id>/design`, `story/<id>/tests`); each is merged into the shared `story/<id>`
+   on their own branches (`story/<id>-design`, `story/<id>-tests`); each is merged into the shared `story/<id>`
    before the next stage needs it (engineer merges design before implement closes; qa merges tests at the start of
    verify). Only the reviewer merges `story/<id>` to `main`.
 5. QA/reviewer defects become `stage:rework` issues for whichever role is at fault - engineer (implementation
@@ -96,7 +96,7 @@ uses server mode, but verify on your bd version.
 | See state | `board` pane in the `agents` window; `bd ready`, `bd blocked`, `bd dep tree <id>` in the `ops` window, or `bd` directly from your own host shell in the project directory — no container needed (see Security notes) |
 | Watch an agent | its pane in the `agents` window (rendered tool calls/text; Ctrl-b o to cycle, Ctrl-b q to jump by number); raw stream in `<project>/.agent-factory/logs/<role>/*.jsonl` |
 | Review-by-exception | `needs-human` list on the board; `bd show <id>` — the agent (or agent-loop.sh itself, on an attempt-cap/failure escalation) leaves a note on the issue explaining exactly what it needs; set `NOTIFY_URL` for push alerts |
-| Unstick an issue | answer what the issue's note asked for, then `approve.sh <id>` |
+| Unstick an issue | answer what the issue's note asked for, then `approve.sh <id> -m "<answer>"` (or plain `approve.sh <id>`) |
 | Pause / resume | `bin/stop.sh` (graceful) / `bin/stop.sh clear` then `bin/start.sh` — run from the same project directory |
 | Hard stop | `bin/stop.sh now` |
 | Restart one agent | `tmux list-panes -t factory:agents` for its index, then `tmux respawn-pane -k -t factory:agents.<index>` |
@@ -104,7 +104,7 @@ uses server mode, but verify on your bd version.
 
 ## Guardrails built in
 Per-session turn cap and wall-clock timeout; per-issue attempt cap (then `needs-human`); circuit breaker that stops
-an agent after N consecutive failed sessions and alerts; daily spend cap (`DAILY_BUDGET_USD`); WIP limit on the PO;
+an agent after N consecutive failed sessions and alerts; daily spend cap (`DAILY_BUDGET_USD`); WIP limit on the PO (`WIP_LIMIT`; stories stalled on a `needs-human` issue, or waiting behind one, are not counted);
 STOP flags; startup preflight (bd reachable, credentials work); clean git slate every session, so unpushed work
 is discarded.
 

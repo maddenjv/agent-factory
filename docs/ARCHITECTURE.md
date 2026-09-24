@@ -16,7 +16,7 @@ to compile; "the code" is the `bin/*.sh` scripts, `docker-compose.yml`, the `Doc
     bookworm base, matching the `node:22-bookworm-slim` family already used for the Claude Code
     CLI). Contains: `claude` (`@anthropic-ai/claude-code`, npm), `bd`/`beads`
     (`github.com/steveyegge/beads/cmd/bd`, go install, copied out of a throwaway builder stage),
-    `git`, `jq`, `curl`, `bash`. The `Dockerfile` creates the account from the host user: name, UID and
+    `git`, `jq`, `curl`, `shellcheck`, `bash`. The `Dockerfile` creates the account from the host user: name, UID and
     GID from `HOST_USER`/`HOST_UID`/`HOST_GID` build args (so files it writes into host bind mounts
     are owned by the invoking host user), home `/home/$HOST_USER`. `CONTAINER_HOME` (env var,
     auto-populated into `.env` by `bin/init.sh` as `/home/<host user>`) is a separate, dependent setting - used only as
@@ -61,8 +61,14 @@ its own sake. Verification is acceptance-style, run from the host shell:
   and UID/GID inside a running container. `smoke-test.sh` (see README "Before running
   unattended") is the closest thing to an integration test for the multi-agent flow itself
   (concurrent Beads writes under server mode).
+- **Regression suite**: QA's verify stage runs every script under `tests/` (both `tests/<story-id>_test.sh`
+  and the older `tests/acceptance/<story-id>.sh`); a failing older-story script is a regression. New stories
+  should use `tests/<story-id>_test.sh`.
 - **bash script changes**: exercise the script directly (most are idempotent and safe to run
   against a scratch `PROJECT_DIR`); `shellcheck` the diff.
+- **Regression suite**: QA's verify stage runs every script under `tests/` (both `tests/<story-id>_test.sh`,
+  the convention for new stories, and the older `tests/acceptance/<story-id>.sh`), not just the current
+  story's; a failing older script is a regression bug (see `agents/qa.md`).
 - QA should specify, per story, the exact shell commands and expected output/exit codes an
   engineer's change must satisfy - there's no `make test` to fall back on.
 
