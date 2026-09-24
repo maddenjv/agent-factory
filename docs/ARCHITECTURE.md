@@ -16,7 +16,7 @@ to compile; "the code" is the `bin/*.sh` scripts, `docker-compose.yml`, the `Doc
     bookworm base, matching the `node:22-bookworm-slim` family already used for the Claude Code
     CLI). Contains: `claude` (`@anthropic-ai/claude-code`, npm), `bd`/`beads`
     (`github.com/steveyegge/beads/cmd/bd`, go install, copied out of a throwaway builder stage),
-    `git`, `jq`, `curl`, `bash`. The `Dockerfile` fixes the account: non-root user `john`, UID/GID
+    `git`, `jq`, `curl`, `shellcheck`, `bash`. The `Dockerfile` fixes the account: non-root user `john`, UID/GID
     from `HOST_UID`/`HOST_GID` build args (so files it writes into host bind mounts are owned by
     the invoking host user), home `/home/john`. `CONTAINER_HOME` (env var, default `/home/john`,
     auto-populated into `.env` by `bin/init.sh`) is a separate, dependent setting - used only as
