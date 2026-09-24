@@ -17,10 +17,14 @@ still_needs_human() {
 
 # recent_alerts: reads the last 6 lines of alerts.log (same tail window as before) and writes the
 # filtered result to stdout - needs-human alerts whose issue has since lost the label (or been
-# closed) and usage-limit alerts whose wait window has elapsed are dropped; everything else
-# (including anything that doesn't match either format) is printed unchanged.
+# closed) and usage-limit alerts whose wait window has elapsed are dropped; any other alert is
+# dropped once older than ALERT_MAX_AGE_MINUTES (default 60). Lines that don't match the log
+# format or have an unparseable timestamp are printed unchanged.
 recent_alerts() {
   local now line ts msg id wait_s alert_epoch
+  local max_min="${ALERT_MAX_AGE_MINUTES:-60}"
+  [[ $max_min =~ ^[1-9][0-9]*$ ]] || max_min=60
+  local max_age_s=$(( max_min * 60 ))
   now=$(date -u +%s)
   tail -n 6 "$DATA_DIR/control/alerts.log" 2>/dev/null | while IFS= read -r line; do
     if [[ ! $line =~ ^([0-9T:-]+Z)\ \[[^]]*\]\ (.*)$ ]]; then
@@ -41,7 +45,8 @@ recent_alerts() {
       continue
     fi
 
-    echo "$line"
+    alert_epoch=$(date -d "$ts" +%s 2>/dev/null) || { echo "$line"; continue; }
+    if (( now - alert_epoch <= max_age_s )); then echo "$line"; fi
   done
 }
 
