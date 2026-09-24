@@ -12,15 +12,17 @@ mkdir -p "$TMP/bin"
 cat > "$TMP/bin/bd" <<'STUB'
 #!/usr/bin/env bash
 { printf '%q ' "$@"; echo; } >> "$BD_LOG"
+printf '%s\0' "$@" > "$BD_RAW/call.$(date +%s%N).$$"
 STUB
 chmod +x "$TMP/bin/bd"
-export BD_LOG="$TMP/bd.log" PATH="$TMP/bin:$PATH"
+mkdir -p "$TMP/raw"
+export BD_RAW="$TMP/raw" BD_LOG="$TMP/bd.log" PATH="$TMP/bin:$PATH"
 PASS=0; FAIL=0
 pass() { PASS=$((PASS + 1)); echo "PASS: $1"; }
 fail() { FAIL=$((FAIL + 1)); echo "FAIL: $1"; }
 
 RC=0; ERR=""
-run() { : > "$BD_LOG"; ERR="$(bash "$SCRIPT" "$@" 2>&1 >/dev/null)"; RC=$?; }
+run() { : > "$BD_LOG"; rm -f "$BD_RAW"/call.*; ERR="$(bash "$SCRIPT" "$@" 2>&1 >/dev/null)"; RC=$?; }
 log() { cat "$BD_LOG"; }
 notes_for() { grep -F -- "update $1 --append-notes" "$BD_LOG"; }
 count_notes() { grep -c -- '--append-notes' "$BD_LOG"; }
@@ -49,7 +51,16 @@ test_ac1_message_removes_label_reopens_and_records_message() {
 test_ac1_message_verbatim_single_argv() {
   local m=$'it\'s "q" $HOME `id` $(id)\nline2'
   run agent-x -m "$m"
-  if [ $RC -eq 0 ] && notes_for agent-x | grep -Fq -- "$(printf '%q' "$m")"; then
+  # raw (unquoted) argv: the note must be a single argument containing the message verbatim
+  local f a found=0 args
+  for f in "$BD_RAW"/call.*; do
+    mapfile -d '' -t args < "$f"
+    [ "${args[0]:-}" = update ] || continue
+    for a in "${args[@]}"; do
+      case "$a" in *"$m"*) found=1 ;; esac
+    done
+  done
+  if [ $RC -eq 0 ] && [ "$(count_notes)" = 1 ] && [ $found = 1 ]; then
     pass "ac1 special chars recorded verbatim as one argument"
   else fail "ac1 verbatim (rc=$RC) log: $(log)"; fi
 }
