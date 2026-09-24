@@ -7,7 +7,7 @@ Install Debian's `shellcheck` package (bookworm, ~0.9.0) via apt in the existing
 ## Changes
 1. `Dockerfile` (runtime stage, line ~18): add `shellcheck` to the package list:
    `git jq curl ca-certificates shellcheck \`. Keep `--no-install-recommends` and the apt list cleanup.
-2. `docs/ARCHITECTURE.md` (~line 19): add `shellcheck` to the image tool list (done in this design commit).
+2. `docs/ARCHITECTURE.md` (~line 19): add `shellcheck` to the image tool list.
 
 Nothing else changes: user/UID/GID setup, claude, bd, entrypoint untouched.
 
