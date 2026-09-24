@@ -43,6 +43,14 @@ agent_last_started_epoch() {
 # run immediately) or by that agent's own later successful-start marker. This needs two passes
 # over the tail window: whether an early line is superseded can depend on a later line the
 # forward filtering pass hasn't reached yet (agent-factory-wzg AC3).
+#
+# "bd cannot reach" / "claude failed to run" always exit agent-loop.sh immediately, so ANY later
+# alert line for that same agent - including a "usage limit hit" preflight retry, which loops/
+# sleeps within its own process rather than exiting - is by construction proof that a later
+# process has since started for that agent. The first pass below therefore also counts
+# "usage limit hit" lines as restart *evidence* (updating restart_epoch), even though the second
+# pass never drops a "usage limit hit" line itself (still governed purely by the wait-window
+# check further down, per AC5) - agent-factory-kuw.
 recent_alerts() {
   local now line ts agent msg id wait_s alert_epoch
   local max_min="${ALERT_MAX_AGE_MINUTES:-60}"
@@ -57,7 +65,7 @@ recent_alerts() {
   while IFS= read -r line; do
     [[ $line =~ ^([0-9T:-]+Z)\ \[([^]]*)\]\ (.*)$ ]] || continue
     ts="${BASH_REMATCH[1]}"; agent="${BASH_REMATCH[2]}"; msg="${BASH_REMATCH[3]}"
-    [[ $msg =~ ^preflight:\ (bd\ cannot\ reach|claude\ failed\ to\ run) ]] || continue
+    [[ $msg =~ ^preflight:\ (bd\ cannot\ reach|claude\ failed\ to\ run|usage\ limit\ hit) ]] || continue
     pf_epoch=$(date -d "$ts" +%s 2>/dev/null) || continue
     if [ -z "${restart_epoch[$agent]:-}" ] || (( pf_epoch > restart_epoch[$agent] )); then
       restart_epoch[$agent]=$pf_epoch
