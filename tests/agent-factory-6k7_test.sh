@@ -30,7 +30,7 @@ readme_setup_section() {
 }
 
 # --- AC1: ARCHITECTURE.md's Stack section states the account is fixed by the Dockerfile
-#          (john, HOST_UID/HOST_GID, /home/john) AND separately describes CONTAINER_HOME as a
+#          (host user via HOST_USER/HOST_UID/HOST_GID, /home/<host user>) AND separately describes CONTAINER_HOME as a
 #          dependent setting used only for docker-compose.yml mounts + agent-loop.sh's sync ---
 test_ac1_architecture_distinguishes_fixed_account_from_container_home() {
   local section
@@ -41,9 +41,9 @@ test_ac1_architecture_distinguishes_fixed_account_from_container_home() {
   fi
 
   local ok=1
-  echo "$section" | grep -q 'john' || { fail "ac1: Stack section no longer mentions the 'john' account"; ok=0; }
+  echo "$section" | grep -q 'HOST_USER' || { fail "ac1: Stack section no longer mentions HOST_USER"; ok=0; }
   echo "$section" | grep -q 'HOST_UID' || { fail "ac1: Stack section no longer mentions HOST_UID"; ok=0; }
-  echo "$section" | grep -q '/home/john' || { fail "ac1: Stack section no longer mentions the /home/john home path"; ok=0; }
+  echo "$section" | grep -q '/home/\(<host user>\|\$HOST_USER\)' || { fail "ac1: Stack section no longer mentions the host-derived home path"; ok=0; }
   echo "$section" | grep -q 'Dockerfile' || { fail "ac1: Stack section does not attribute the account to the Dockerfile"; ok=0; }
   [ "$ok" = 1 ] || return
 
@@ -76,8 +76,8 @@ test_ac2_readme_documents_container_home() {
     fail "ac2: Setup section does not mention CONTAINER_HOME"
     return
   fi
-  if ! echo "$section" | grep -q '/home/john'; then
-    fail "ac2: Setup section mentions CONTAINER_HOME but not its default (/home/john)"
+  if ! echo "$section" | grep -q '/home/<host user>'; then
+    fail "ac2: Setup section mentions CONTAINER_HOME but not its default (/home/<host user>)"
     return
   fi
   if ! echo "$section" | grep -q 'init\.sh'; then
