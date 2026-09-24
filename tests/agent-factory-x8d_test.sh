@@ -53,9 +53,9 @@ test_ac2_attempt_cap_on_conflict_rework_restarts_story() {
 test_ac3_new_implement_verify_review_chain() {
   need_corpus ac3 || return
   local c; c=$(corpus)
-  echo "$c" | grep -qE 'role:engineer,stage:implement' || { fail "ac3: no role:engineer,stage:implement issue created"; return; }
-  echo "$c" | grep -qE 'role:qa,stage:verify' || { fail "ac3: no role:qa,stage:verify issue created"; return; }
-  echo "$c" | grep -qE 'role:reviewer,stage:review' || { fail "ac3: no role:reviewer,stage:review issue created"; return; }
+  echo "$c" | grep -qE 'role:engineer,stage:implement|mk engineer implement' || { fail "ac3: no role:engineer,stage:implement issue created"; return; }
+  echo "$c" | grep -qE 'role:qa,stage:verify|mk qa verify' || { fail "ac3: no role:qa,stage:verify issue created"; return; }
+  echo "$c" | grep -qE 'role:reviewer,stage:review|mk reviewer review' || { fail "ac3: no role:reviewer,stage:review issue created"; return; }
   echo "$c" | grep -qE 'story:\$\{?[a-z_]+\}?|story:<story-id>|story:<id>' || { fail "ac3: new issues not labelled story:<id>"; return; }
   [ "$(echo "$c" | grep -cE 'bd dep add')" -ge 2 ] || { fail "ac3: fewer than 2 'bd dep add' calls (need verify->implement, review->verify)"; return; }
   pass "ac3: implement -> verify -> review chain created with roles/labels"
@@ -83,7 +83,8 @@ test_ac5_new_implement_description() {
 test_ac6_no_design_or_tests_issue_and_comment_recorded() {
   need_corpus ac6 || return
   local c; c=$(corpus)
-  echo "$c" | grep -qE 'stage:design|stage:tests' \
+  # Only bin/ scripts create issues; role prompts (e.g. qa.md) legitimately mention their own stages.
+  cat $(restart_files | grep '^bin/') | grep -qE 'stage:design|stage:tests|mk (architect|qa) (design|tests)' \
     && { fail "ac6: restart logic creates design/tests issues"; return; }
   echo "$c" | grep -qE 'bd comment' || { fail "ac6: restart is not recorded with bd comment"; return; }
   echo "$c" | grep -qiE 'unresolvable' && echo "$c" | grep -qiE 'attempt cap|attempts' \
