@@ -68,7 +68,7 @@ cat > "$TMP/stubs/bd" <<'STUB'
 #!/usr/bin/env bash
 echo "bd $*" >> "$W/bdlog"
 case "$1" in
-  ready)
+  ready|list)
     label=""
     args=("$@")
     for ((i = 0; i < ${#args[@]}; i++)); do
@@ -83,17 +83,36 @@ case "$1" in
   show)
     jq -c --arg id "$2" '[.[] | select(.id == $id)]' "$W/issues.json"
     ;;
-  list) echo '[]' ;;
   *) ;;
 esac
 exit 0
 STUB
 chmod +x "$TMP/stubs/bd"
 
+# TL_OUTCOME (unset for AC1/AC2): stands in for what a real team-lead session would have done to
+# issue-A via bd update calls, by editing issues.json directly (the bd stub is read-only against
+# it) - reroute (AC4), escalate (AC6), or none (a session that neither rerouted nor escalated, the
+# "did nothing" case every other role's crash/timeout already falls into).
 cat > "$TMP/stubs/claude" <<'STUB'
 #!/usr/bin/env bash
 echo x >> "$W/claude_runs"
 echo '{"type":"result","subtype":"success","is_error":false,"num_turns":1,"total_cost_usd":0}'
+case "${TL_OUTCOME:-}" in
+  reroute)
+    jq '(.[] | select(.id=="issue-A").labels) |= ([.[] | select(. != "needs-team-lead" and . != "stage:verify")] + ["stage:design"])' \
+      "$W/issues.json" > "$W/issues.json.tmp" && mv "$W/issues.json.tmp" "$W/issues.json"
+    ;;
+  fix)
+    jq '(.[] | select(.id=="issue-A").labels) |= [.[] | select(. != "needs-team-lead")]' \
+      "$W/issues.json" > "$W/issues.json.tmp" && mv "$W/issues.json.tmp" "$W/issues.json"
+    ;;
+  escalate)
+    jq '(.[] | select(.id=="issue-A").labels) |= ([.[] | select(. != "needs-team-lead")] + ["needs-human"])
+        | (.[] | select(.id=="issue-A").notes) = "team-lead: story doc and design doc disagree on X - need a human call"' \
+      "$W/issues.json" > "$W/issues.json.tmp" && mv "$W/issues.json.tmp" "$W/issues.json"
+    ;;
+  none) : ;;
+esac
 touch "$W/data/control/STOP"
 exit 0
 STUB
@@ -102,16 +121,86 @@ chmod +x "$TMP/stubs/claude"
 ORIGIN="$TMP/origin"
 git init -q -b main "$ORIGIN" && git -C "$ORIGIN" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
 
-# run_loop FIXTURE: one pass of bin/agent-loop.sh ROLE=team-lead against the stubs above; sets W.
+# run_loop FIXTURE [TL_OUTCOME]: one pass of bin/agent-loop.sh ROLE=team-lead against the stubs
+# above; sets W and RC.
 run_loop() {
   W="$TMP/run.$RANDOM"; mkdir -p "$W/data/control" "$W/home"; : > "$W/bdlog"; : > "$W/claude_runs"
   cp "$1" "$W/issues.json"
-  ( export W HOME="$W/home" CONTAINER_HOME="$W/home"
+  RC=0
+  ( export W HOME="$W/home" CONTAINER_HOME="$W/home" TL_OUTCOME="${2:-}"
     PATH="$TMP/stubs:$PATH" ROLE=team-lead KIT_DIR="$KIT_DIR" PROJECT_DIR="$W" DATA_DIR="$W/data" ORIGIN="$ORIGIN" \
       PREFLIGHT=0 MAX_ATTEMPTS_PER_ISSUE=1 MAX_CONSECUTIVE_FAILURES=1 \
-      timeout 30 bash "$KIT_DIR/bin/agent-loop.sh" >"$W/out" 2>&1 )
+      timeout 30 bash "$KIT_DIR/bin/agent-loop.sh" >"$W/out" 2>&1 ) || RC=$?
 }
 claimed() { grep -qE "bd update $1 --claim" "$W/bdlog"; }
+
+test_ac1_startup_does_not_crash_on_hyphenated_role() {
+  run_loop "$TMP/issues_ac1.json"
+  if grep -qi 'invalid variable name' "$W/out"; then
+    fail "ac1: ROLE=team-lead still crashes model selection with 'invalid variable name': $(cat "$W/out")"
+    return
+  fi
+  grep -q 'started: role=team-lead' "$W/out" \
+    && pass "ac1: ROLE=team-lead reaches the main loop (no crash on the hyphenated role name)" \
+    || fail "ac1: never logged 'started: role=team-lead'. out:$(cat "$W/out")"
+}
+
+# ============================================================
+# AC4/AC5/AC6 - handle_outcome(): agent-loop.sh must count a reroute or direct fix (needs-team-lead
+# cleared, issue left open) as a SUCCESS, not a failed attempt, and must keep the existing
+# needs-human note-presence safety net for an escalation. A session that does neither (crashed,
+# gave up silently, needs-team-lead still present) must still be treated as an ordinary failure,
+# same as every other role's "did nothing" case. These exercise bin/agent-loop.sh's own logic, not
+# agents/team-lead.md's prose - the prose can say the right thing while the loop still miscounts it.
+# ============================================================
+
+test_ac4_reroute_counts_as_success_not_a_failed_attempt() {
+  run_loop "$TMP/issues_ac1.json" reroute
+  if grep -qE 'append-notes.*not completed|label add issue-A needs-human' "$W/bdlog"; then
+    fail "ac4: reroute (needs-team-lead cleared, issue left open) was miscounted as a failed attempt: $(grep issue-A "$W/bdlog")"
+    return
+  fi
+  if grep -q 'circuit breaker' "$W/data/control/alerts.log" 2>/dev/null; then
+    fail "ac4: circuit breaker tripped after a single successful reroute"
+    return
+  fi
+  grep -q 'issue-A triaged (needs-team-lead cleared)' "$W/out" \
+    && pass "ac4: reroute (label/stage changed, needs-team-lead cleared) counted as a successful triage" \
+    || fail "ac4: no 'triaged (needs-team-lead cleared)' log line. out:$(cat "$W/out")"
+}
+
+test_ac5_direct_fix_counts_as_success_not_a_failed_attempt() {
+  # AC5: role:/stage: were already correct - only needs-team-lead is cleared, nothing else on the
+  # issue changes. Distinct from AC4's reroute fixture (which also swaps stage:) so this pins
+  # handle_outcome()'s branch independently of any role:/stage: change.
+  run_loop "$TMP/issues_ac1.json" fix
+  if grep -qE 'append-notes.*not completed|label add issue-A needs-human' "$W/bdlog"; then
+    fail "ac5: direct fix (needs-team-lead cleared, role:/stage: untouched) was miscounted as a failed attempt: $(grep issue-A "$W/bdlog")"
+    return
+  fi
+  [ "$RC" -eq 0 ] || { fail "ac5: loop exited $RC instead of idling/being stopped normally"; return; }
+  grep -q 'issue-A triaged (needs-team-lead cleared)' "$W/out" \
+    && pass "ac5: direct fix (needs-team-lead cleared, role:/stage: unchanged) counted as a successful triage" \
+    || fail "ac5: no 'triaged (needs-team-lead cleared)' log line. out:$(cat "$W/out")"
+}
+
+test_ac6_escalation_still_checked_for_a_note_and_counts_as_success() {
+  run_loop "$TMP/issues_ac1.json" escalate
+  if grep -q 'WITHOUT an explanation' "$W/data/control/alerts.log" 2>/dev/null; then
+    fail "ac6: escalation with a note was flagged as having no explanation - note-presence check broken"
+    return
+  fi
+  grep -q 'flagged needs-human by the agent' "$W/data/control/alerts.log" 2>/dev/null \
+    && pass "ac6: escalation (needs-human + note, needs-team-lead cleared) recognised and counted as success" \
+    || fail "ac6: no 'flagged needs-human by the agent' alert. alerts:$(cat "$W/data/control/alerts.log" 2>/dev/null) out:$(cat "$W/out")"
+}
+
+test_ac4_neither_rerouted_nor_escalated_is_an_ordinary_failure() {
+  run_loop "$TMP/issues_ac1.json" none
+  grep -q 'not completed' "$W/data/control/alerts.log" 2>/dev/null \
+    && pass "ac4: a session that left needs-team-lead in place is treated as an ordinary failed attempt" \
+    || fail "ac4: expected a 'not completed' failure alert. alerts:$(cat "$W/data/control/alerts.log" 2>/dev/null) out:$(cat "$W/out")"
+}
 
 test_ac1_finds_work_via_needs_team_lead_label_not_role_label() {
   run_loop "$TMP/issues_ac1.json"
