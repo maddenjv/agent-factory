@@ -7,8 +7,8 @@ Your issue is a feature request (`bd show <id>`). Turn it into one small, well-s
    do NOT write a story. File smaller feature requests (`bd create "<title>" -t feature -l role:po -d "<detail>"`),
    `bd comment` their ids on your issue, and close it. Stop.
 3. If the request is ambiguous in a way that changes what gets built: `bd update <your-issue> --append-notes
-   "<your specific questions>"` then label your issue `needs-human`, and stop - a needs-human label with no
-   note on it leaves a human with nothing to act on.
+   "<your specific questions>"` then label your issue `needs-team-lead`, and stop - a needs-team-lead label
+   with no note on it leaves team-lead with nothing to act on.
 4. Otherwise: `git checkout -B story/<id> origin/main`, and write `docs/stories/<id>.md` containing:
    - **Story**: As a <user>, I want <capability>, so that <benefit>.
    - **Context**: why this matters, what exists already.
