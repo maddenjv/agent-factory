@@ -5,7 +5,7 @@
 # Claude Code session on it, check what happened, repeat. Beads is the only memory.
 set -uo pipefail
 
-ROLE="${ROLE:?ROLE must be set (po|architect|qa|engineer|reviewer)}"
+ROLE="${ROLE:?ROLE must be set (po|architect|qa|engineer|reviewer|team-lead)}"
 AGENT_ID="${AGENT_ID:-$ROLE}"
 KIT_DIR="${KIT_DIR:?KIT_DIR must be set}"           # this repo (docker-compose.yml, bin/, agents/)
 PROJECT_DIR="${PROJECT_DIR:?PROJECT_DIR must be set}"  # the real project - see bin/lib.sh
@@ -31,8 +31,21 @@ if [ "$CONTAINER_HOME" != "$HOME" ]; then
   echo "error: CONTAINER_HOME ($CONTAINER_HOME) != image HOME ($HOME). Set HOST_USER (and CONTAINER_HOME=/home/<HOST_USER>) in .env - re-run bin/init.sh after removing a stale CONTAINER_HOME line - then rebuild: docker compose build agent" >&2
   exit 1
 fi
-model_var="MODEL_${ROLE^^}"
+# ---------- model resolution ----------
+# Two tiers: team-lead (coordination/triage) gets the most capable model; the five execution
+# roles get a lower-capability default. Change these two values if the mapping drifts - no other
+# call site hardcodes a model name. An explicit MODEL_<ROLE> (below) always overrides its tier.
+TIER_TEAM_LEAD="${TIER_TEAM_LEAD:-opus}"
+TIER_STANDARD="${TIER_STANDARD:-sonnet}"
+
+# ROLE can contain a hyphen (team-lead); "-" is not legal in a bash variable name, so sanitize
+# before building the indirect-expansion name (MODEL_TEAM_LEAD, not MODEL_TEAM-LEAD).
+model_key="${ROLE^^}"; model_key="${model_key//-/_}"
+model_var="MODEL_${model_key}"
 MODEL="${!model_var:-}"
+if [ -z "$MODEL" ]; then
+  if [ "$ROLE" = "team-lead" ]; then MODEL="$TIER_TEAM_LEAD"; else MODEL="$TIER_STANDARD"; fi
+fi
 
 mkdir -p "$LOGDIR" "$STATE" "$CONTROL/cost"
 # shellcheck disable=SC1091
@@ -54,9 +67,18 @@ has_label()   { show_json "$1" | jq -e --arg l "$2" '(.labels // []) | index($l)
 is_ready()    { bd ready --limit 200 --json 2>/dev/null | jq -e --arg id "$1" '[.[]? | select(.id == $id)] | length > 0' >/dev/null 2>&1; }
 
 next_issue() {
+  if [ "$ROLE" = "team-lead" ]; then
+    bd list --label needs-team-lead --limit 50 --json 2>>"$LOGDIR/bd-err.log" | jq -r --arg me "$AGENT_ID" '
+      [ .[]?
+        | select(.status != "closed")
+        | select(((.labels // []) | index("needs-human")) | not)
+        | select(((.assignee // "") == "") or (.assignee == $me)) ]
+      | .[0].id // empty' 2>/dev/null
+    return
+  fi
   bd ready --label "role:$ROLE" --limit 50 --json 2>>"$LOGDIR/bd-err.log" | jq -r --arg me "$AGENT_ID" '
     [ .[]?
-      | select(((.labels // []) | index("needs-human")) | not)
+      | select(((.labels // []) | (index("needs-human") != null or index("needs-team-lead") != null)) | not)
       | select(((.assignee // "") == "") or (.assignee == $me)) ]
     | .[0].id // empty' 2>/dev/null
 }
@@ -80,12 +102,12 @@ release_stale() {  # anything still in_progress under our name at startup is lef
 }
 
 # ---------- throttles ----------
-in_flight() {  # stories whose review issue is not yet closed, minus those stalled on a needs-human issue
+in_flight() {  # stories whose review issue is not yet closed, minus those stalled on a needs-human/needs-team-lead issue
   bd list --json 2>/dev/null | jq '
     [ .[]? | select(.status != "closed") ] as $open
-    | ($open | map({key: .id, value: ((.labels // []) | index("needs-human") != null)}) | from_entries) as $nh
+    | ($open | map({key: .id, value: ((.labels // []) | (index("needs-human") != null) or (index("needs-team-lead") != null))}) | from_entries) as $stalled_lbl
     | ( [ $open[]
-          | select(($nh[.id]) or ([ (.dependencies // [])[] | select(.type == "blocks") | $nh[.depends_on_id] ] | any))
+          | select(($stalled_lbl[.id]) or ([ (.dependencies // [])[] | select(.type == "blocks") | $stalled_lbl[.depends_on_id] ] | any))
           | (.labels // [])[] | select(startswith("story:")) ] | unique ) as $stalled
     | [ $open[]
         | select((.labels // []) | index("role:reviewer"))
@@ -205,35 +227,36 @@ handle_outcome() {  # 0 = the agent did something legitimate with the issue, 1 =
   if is_conflict_rework "$id" && { has_label "$id" conflict-unresolvable || has_label "$id" needs-human; }; then
     restart_story "$id" unresolvable; return 0
   fi
-  if has_label "$id" needs-human; then
-    # CLAUDE.project.md tells the agent to --append-notes what it needs BEFORE labelling
-    # needs-human - but that's an instruction to an LLM, not a guarantee. Back it up mechanically:
-    # if it labelled needs-human without a note (issue_field's "// empty" also catches a JSON
-    # null, which is what an unset field reads as), `bd show` would otherwise be a dead end for
-    # a human trying to figure out what's actually needed.
+  # Backstop for both escalation labels; needs-team-lead skipped for ROLE=team-lead (its own queue).
+  local esc
+  for esc in needs-human needs-team-lead; do
+    [ "$esc" = needs-team-lead ] && [ "$ROLE" = team-lead ] && continue
+    has_label "$id" "$esc" || continue
     if [ -z "$(issue_field "$id" notes)" ]; then
-      bd update "$id" --append-notes "agent-loop: $AGENT_ID labelled this needs-human but left no note explaining what it needs - see the session transcript. Transcript: $LOGDIR/$(date +%F).$id.jsonl" >/dev/null 2>&1
-      alert "$id flagged needs-human WITHOUT an explanation from the agent - see the transcript"
+      bd update "$id" --append-notes "agent-loop: $AGENT_ID labelled this $esc but left no note explaining what it needs - see the session transcript. Transcript: $LOGDIR/$(date +%F).$id.jsonl" >/dev/null 2>&1
+      alert "$id flagged $esc WITHOUT an explanation from the agent - see the transcript"
     else
-      alert "$id flagged needs-human by the agent"
+      alert "$id flagged $esc by the agent"
     fi
     return 0
-  fi
+  done
   if [ "$st" = "open" ] && ! is_ready "$id"; then log "$id parked behind new blockers (rework/handoff)"; return 0; fi
+  if [ "$ROLE" = "team-lead" ] && ! has_label "$id" needs-team-lead; then
+    log "$id triaged (needs-team-lead cleared)"; return 0
+  fi
   return 1
 }
 
 record_failure() {
-  local id=$1 f="$STATE/attempts.$1" n
+  local id=$1 f="$STATE/attempts.$1" n esc_label
   n=$(( $(cat "$f" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$f"
   bd update "$id" --status open >/dev/null 2>&1
   if [ "$n" -ge "$MAX_ATTEMPTS_PER_ISSUE" ]; then
-    # This is agent-loop.sh escalating on its own (attempt cap, not the agent choosing to stop),
-    # so it can't explain WHY in the way the agent itself could - but a bd show with nothing on
-    # it is still a dead end, so at least point at the transcript.
+    # team-lead keeps needs-human (agent-factory-dx0); the five build roles get needs-team-lead.
+    esc_label="needs-team-lead"; [ "$ROLE" = "team-lead" ] && esc_label="needs-human"
     bd update "$id" --append-notes "agent-loop: not completed after $n attempt(s) by $AGENT_ID (session ended without closing or explaining why). Transcript: $LOGDIR/$(date +%F).$id.jsonl" >/dev/null 2>&1
-    bd label add "$id" needs-human >/dev/null 2>&1
-    alert "$id not completed after $n attempts; labelled needs-human"
+    bd label add "$id" "$esc_label" >/dev/null 2>&1
+    alert "$id not completed after $n attempts; labelled $esc_label"
     if is_conflict_rework "$id"; then restart_story "$id" attempt-cap; fi
   else
     log "$id not completed (attempt $n/$MAX_ATTEMPTS_PER_ISSUE); released for retry"
@@ -297,7 +320,7 @@ if [ "$PREFLIGHT" = 1 ]; then
 fi
 
 release_stale
-log "started: role=$ROLE model=${MODEL:-default} max_turns=$MAX_TURNS timeout=$ITERATION_TIMEOUT"
+log "started: role=$ROLE model=$MODEL max_turns=$MAX_TURNS timeout=$ITERATION_TIMEOUT"
 
 # ---------- main loop ----------
 fails=0

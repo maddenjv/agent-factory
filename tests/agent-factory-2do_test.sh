@@ -200,7 +200,8 @@ $RESULT_OUT"
 
 # --- AC5: alerts other than needs-human/usage-limit are unaffected, byte-for-byte ---
 test_ac5_other_alert_types_unaffected() {
-  local ts; ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)  # now-relative: 47q expires old alerts
+  local ts
+  ts="$(now_ts '5 minutes ago')"  # fresh: 47q expires non-needs-human alerts older than ALERT_MAX_AGE_MINUTES
   local lines=(
     "$ts [engineer] circuit breaker: git sync failing; stopping"
     "$ts [engineer] circuit breaker: 5 consecutive failures; stopping engineer"

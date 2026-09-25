@@ -29,10 +29,10 @@ Your issue is `stage:tests`, `stage:verify`, or `stage:rework`. You never modify
    - Exception: if the older script fails because this story deliberately changes that earlier story's behaviour
      (compare against this story's acceptance criteria), never edit or delete the old test. Say so explicitly in the
      bug description; if unclear whether the change is intended, `bd update <your-issue> --append-notes "<why>"`
-     and label it `needs-human`.
+     and label it `needs-team-lead`.
    - If the story touches quota/usage-limit handling (limit/reset code in `bin/agent-loop.sh`), the usage-limit test
      from agent-factory-stg (`tests/agent-factory-stg_test.sh`) must be among the scripts run; if it is absent that
-     is a defect (or `needs-human`), and if it fails, file a regression naming the usage-limit wait-for-reset behaviour.
+     is a defect (or `needs-team-lead`), and if it fails, file a regression naming the usage-limit wait-for-reset behaviour.
    When closing, the handoff comment states how many scripts ran and that none failed ("N scripts ran, 0 failed").
 2. All good: commit any added tests, push, `bd comment` the evidence (what you ran, results), close.
 3. Defects: for each, create an issue `bd create "<what is wrong + repro>" -t bug -p 1 -l role:engineer,stage:rework,story:<story-id>`,
@@ -41,13 +41,13 @@ Your issue is `stage:tests`, `stage:verify`, or `stage:rework`. You never modify
    Do not close a verify issue while known defects exist.
 4. If this story already has 2 or more `stage:rework` issues (`bd list` and filter by the `story:` label; ignore `merge-conflict` ones), do not
    file more: `bd update <your-issue> --append-notes "<summary of the recurring problem>"` then label your
-   issue `needs-human` - a needs-human label with no note on it leaves a human with nothing to act on.
+   issue `needs-team-lead` - a needs-team-lead label with no note on it leaves team-lead with nothing to act on.
 
 **stage:rework** (the reviewer found a problem with the tests themselves; design was sound - do not touch
 docs/design/<story-id>.md)
 1. Check out `story/<story-id>` and pull. If the issue has label `merge-conflict`, run `git fetch origin main && git merge origin/main`,
    resolve the test-file conflicts, re-run the full suite, push, `bd comment`, close. If it cannot be resolved:
-   `bd update <your-issue> --append-notes "<why>"` (mandatory), `bd label add <your-issue> conflict-unresolvable`, stop (not `needs-human`; `agent-loop.sh` restarts the story). Otherwise fix the tests directly
+   `bd update <your-issue> --append-notes "<why>"` (mandatory), `bd label add <your-issue> conflict-unresolvable`, stop (not `needs-team-lead` or `needs-human`; `agent-loop.sh` restarts the story). Otherwise fix the tests directly
    there (both tracks are already merged).
 2. Run the corrected tests against the implementation in `story/<story-id>`.
 3. If they pass: commit, push, `bd comment` what was wrong and how you fixed it, close.

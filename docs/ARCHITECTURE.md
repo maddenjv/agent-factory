@@ -6,6 +6,14 @@ project, coordinated through Beads (`bd`) and git. There is no application sourc
 to compile; "the code" is the `bin/*.sh` scripts, `docker-compose.yml`, the `Dockerfile` for the
 `agent` image, and the per-role prompts under `agents/`.
 
+A sixth role, `team-lead`, triages issues labelled `needs-team-lead`: `agent-loop.sh` finds its
+work via that label directly (not a `role:team-lead` label the other five use), since the whole
+point is investigating issues that may be blocked or otherwise not `bd ready`. It reroutes stuck
+work to the correct role/stage, fixes it directly, or escalates to `needs-human` - see
+`agents/team-lead.md`. It isn't part of `bin/start.sh`'s tmux layout yet (`agent-factory-uhc`) or
+given a non-default model tier yet (`agent-factory-250`); until those land, run it by hand:
+`ROLE=team-lead docker compose -f "$KIT_DIR/docker-compose.yml" run --rm --name factory-team-lead agent`.
+
 ## Stack
 - **Orchestration**: `bash` scripts under `bin/` (`lib.sh` holds shared helpers; every other
   script sources it). No other scripting language is introduced without a strong reason.
@@ -49,8 +57,8 @@ Two directories outside this repo matter at runtime and must not be confused (se
 - Docker image changes: prefer boring, pinned-where-it-matters base images over cleverness. The
   `agent` image is rebuilt with `docker compose build agent`; there is no registry push step.
 - Errors inside `agent-loop.sh` are handled by the loop itself (attempt caps, circuit breaker,
-  `needs-human` escalation with a note) rather than by scripts crashing silently - see README
-  "Guardrails built in".
+  `needs-team-lead` escalation with a note for the five build roles, `needs-human` for team-lead's
+  own escalations) rather than by scripts crashing silently - see README "Guardrails built in".
 
 ## Test strategy
 This is an infra/orchestration kit: there is no unit-test framework and none should be added for
