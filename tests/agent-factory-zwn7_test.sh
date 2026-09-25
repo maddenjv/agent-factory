@@ -127,6 +127,26 @@ test_ac5_limit_still_holds_when_everyone_busy_and_others_stalled() {
     || fail "ac5: got '$out', expected '2 0'"
 }
 
+test_edge_bd_unreachable_fails_safe_at_limit() {
+  # idle_downstream_role's `[ -n "$list" ] || return 1` guard is not decorative: piping empty
+  # input straight into `jq -e '(map(...) ...'` makes the filter run zero times, and a zero-output
+  # `jq -e` run exits 0 - the opposite of fail-safe (see docs/design/agent-factory-zwn7.md's
+  # "Error cases"/implementation notes; `printf '' | jq -e '.'` exits 0, confirmed by inspection).
+  # Simulate `bd` being unreachable: `bd list --json` prints nothing, same as in_flight()'s own
+  # failure mode. At/above WIP_LIMIT, wip_ok must stay false (PO waits), not fail open.
+  mkdir -p "$TMP/bin-unreachable"
+  cat > "$TMP/bin-unreachable/bd" <<'STUB'
+#!/usr/bin/env bash
+exit 0
+STUB
+  chmod +x "$TMP/bin-unreachable/bd"
+  local out ok
+  out=$(PATH="$TMP/bin-unreachable:$PATH" ROLE=po WIP_LIMIT=0 bash -c '
+    source "$1"; if wip_ok; then echo 1; else echo 0; fi' _ "$TMP/fns.sh")
+  [ "$out" = "0" ] && pass "edge: bd unreachable (empty bd list output) fails safe - wip_ok false at/above WIP_LIMIT" \
+    || fail "edge: bd unreachable got wip_ok='$out', expected '0' (fail-safe)"
+}
+
 test_ac6_docs_state_limit_yields_to_keep_roles_busy() {
   local f
   for f in README.md .env.example; do
@@ -136,6 +156,6 @@ test_ac6_docs_state_limit_yields_to_keep_roles_busy() {
   pass "ac6: README.md and .env.example document that the limit yields to keep roles busy"
 }
 
-for t in $(declare -F | awk '{print $3}' | grep '^test_ac'); do "$t"; done
+for t in $(declare -F | awk '{print $3}' | grep '^test_'); do "$t"; done
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]
