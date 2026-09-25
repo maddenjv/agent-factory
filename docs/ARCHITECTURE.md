@@ -49,8 +49,8 @@ Two directories outside this repo matter at runtime and must not be confused (se
 - Docker image changes: prefer boring, pinned-where-it-matters base images over cleverness. The
   `agent` image is rebuilt with `docker compose build agent`; there is no registry push step.
 - Errors inside `agent-loop.sh` are handled by the loop itself (attempt caps, circuit breaker,
-  `needs-human` escalation with a note) rather than by scripts crashing silently - see README
-  "Guardrails built in".
+  `needs-team-lead` escalation with a note for the five build roles, `needs-human` for team-lead's
+  own escalations) rather than by scripts crashing silently - see README "Guardrails built in".
 
 ## Test strategy
 This is an infra/orchestration kit: there is no unit-test framework and none should be added for

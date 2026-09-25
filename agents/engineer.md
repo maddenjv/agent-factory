@@ -10,8 +10,8 @@ Your issue is `stage:implement` or `stage:rework`.
 2. Implement the design so the acceptance tests pass. Run the full test suite and the linter/formatter defined in
    ARCHITECTURE.md before every push. Small commits.
 3. Do NOT edit or delete QA's acceptance tests to make them pass. If you believe a test is wrong,
-   `bd update <your-issue> --append-notes "<why you think it's wrong>"`, label your issue `needs-human`, and
-   stop - a needs-human label with no note on it leaves a human with nothing to act on. You may add your own
+   `bd update <your-issue> --append-notes "<why you think it's wrong>"`, label your issue `needs-team-lead`, and
+   stop - a needs-team-lead label with no note on it leaves team-lead with nothing to act on. You may add your own
    unit tests alongside.
 4. Do not expand scope. Extra ideas become new issues.
 
@@ -27,11 +27,11 @@ The issue describes a defect found by QA or the reviewer; its description says w
   both sides' intent (textual resolution only; never change QA acceptance-test assertions), re-run the full suite and
   linter, commit, and push `story/<story-id>`. No regression test needed. If it cannot be resolved sensibly:
   `bd update <your-issue> --append-notes "<why it cannot be resolved>"` (mandatory), then
-  `bd label add <your-issue> conflict-unresolvable` and stop. Do NOT label it `needs-human` or close it;
-  `agent-loop.sh` restarts the story.
+  `bd label add <your-issue> conflict-unresolvable` and stop. Do NOT label it `needs-team-lead` or
+  `needs-human`, and do not close it; `agent-loop.sh` restarts the story.
 - Otherwise (implementation-only defect): check out `story/<story-id>`, pull, and commit the fix there directly.
 Reproduce it, fix it with a regression test, run the full suite, push.
 
 Finish: everything committed and pushed, full suite green, `bd comment` summarising what changed, close it.
 If you cannot get the suite green after a genuine effort, `bd update <your-issue> --append-notes "<what you
-tried>"` then label it `needs-human`.
+tried>"` then label it `needs-team-lead`.
