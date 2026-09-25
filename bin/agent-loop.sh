@@ -114,7 +114,35 @@ in_flight() {  # stories whose review issue is not yet closed, minus those stall
         | select(([ (.labels // [])[] | select(startswith("story:")) ] | any(. as $s | $stalled | index($s))) | not)
       ] | length' 2>/dev/null
 }
-wip_ok() { [ "$ROLE" != "po" ] || [ "$(in_flight)" -lt "$WIP_LIMIT" ] 2>/dev/null; }
+idle_downstream_role() {  # true if architect, engineer, qa or reviewer has no ready or in-progress,
+                          # non-stalled role:<role> issue - i.e. the PO could unblock it by starting
+                          # another story. "Ready" mirrors bd ready: open, and every "blocks"
+                          # dependency is resolved (closed - either absent from bd list's default
+                          # open/in_progress-only output, or explicitly status:"closed" in a test
+                          # fixture). Same needs-human/needs-team-lead stall exclusion as in_flight().
+  local list; list=$(bd list --json 2>/dev/null)
+  [ -n "$list" ] || return 1   # bd unreachable -> fail safe, same as in_flight() -> wip_ok false
+  printf '%s' "$list" | jq -e '
+    (map({key: .id, value: .status}) | from_entries) as $status
+    | (map({key: .id, value: (((.labels // []) | index("needs-human")) != null
+                               or ((.labels // []) | index("needs-team-lead")) != null)})
+       | from_entries) as $stalled
+    | ["architect","engineer","qa","reviewer"] as $roles
+    | [ .[]
+        | select(.status != "closed")
+        | select($stalled[.id] | not)
+        | select(.status == "in_progress"
+                 or (.status == "open"
+                     and ([ (.dependencies // [])[] | select(.type == "blocks")
+                            | ($status[.depends_on_id] // "closed") ]
+                          | all(. == "closed"))))
+        | (.labels // [])[] | select(startswith("role:")) | ltrimstr("role:")
+      ] as $active
+    | ($roles - ($active | unique)) | length > 0
+  ' >/dev/null 2>&1
+}
+
+wip_ok() { [ "$ROLE" != "po" ] && return 0; [ "$(in_flight)" -lt "$WIP_LIMIT" ] 2>/dev/null && return 0; idle_downstream_role; }
 
 spent_today() { cat "$CONTROL"/cost/*."$(date +%F)" 2>/dev/null | awk '{s+=$1} END{printf "%.2f", s+0}'; }
 budget_ok()   { [ -z "$DAILY_BUDGET_USD" ] || awk -v s="$(spent_today)" -v b="$DAILY_BUDGET_USD" 'BEGIN{exit !(s<b)}'; }
