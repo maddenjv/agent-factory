@@ -48,6 +48,18 @@ Two directories outside this repo matter at runtime and must not be confused (se
 **KIT_DIR** (this repo) and **PROJECT_DIR** (the project being worked on, which gets its own
 `.agent-factory/` runtime state - workspaces, logs, Dolt data, Claude config).
 
+## Getting work to main
+Two paths reach `main`, chosen by how much the work actually needs - see CLAUDE.md's "Storyless
+fix work" for the mechanics an agent follows, and `agents/reviewer.md` for how each is reviewed:
+- **Story path** (default; required whenever the work needs a new design decision or new tests):
+  `story/<story-id>` runs the full design (architect) -> tests (qa) -> implement (engineer) ->
+  verify (qa) -> review (reviewer) chain; `bin/new-story.sh` cuts the branch from `main`.
+- **Storyless fix path** (small, self-contained `discovered-from` follow-ups only - a stale doc
+  line, a one-line test fix, anything already fully scoped by the issue that found it, needing no
+  new design decision and no new test): a `fix/<issue-id>` branch cut directly from `main`,
+  reviewed and merged by the reviewer the same way as a story review - same bar, scaled to the
+  size of the change - but skipping the tests/implement/verify stages entirely.
+
 ## Conventions
 - Scripts are POSIX-ish bash, `set -euo pipefail` (or the narrower `set -uo pipefail` where a
   script must survive individual command failures, e.g. `agent-loop.sh`'s long-running loop).

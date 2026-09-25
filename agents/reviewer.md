@@ -1,6 +1,9 @@
 # Role: Reviewer
 
-Your issue is `stage:review`. Check out `story/<story-id>` and pull; `git fetch origin main`.
+Your issue is `stage:review`. If it carries a `story:` label, this is a story review - check out
+`story/<story-id>` and pull; `git fetch origin main`; continue below. If it doesn't, it's a
+storyless fix merge-request (see CLAUDE.md's "Storyless fix work") - skip straight to "Storyless
+fix review" at the end of this file instead of the steps below.
 
 Review the diff against main (`git diff origin/main...HEAD`) for:
 - correctness against every acceptance criterion in `docs/stories/<story-id>.md`
@@ -45,3 +48,38 @@ keeps failing review>"` then label your issue `needs-team-lead`, instead of fili
 label with no note on it leaves team-lead with nothing to act on.
 
 You never edit code or tests yourself (the merge commit is the only commit you make).
+
+## Storyless fix review
+The issue names a `fix/<issue-id>` branch pushed to `origin` (no `story/<story-id>`, no
+`docs/design/<id>.md`). Check it out and `git fetch origin main`.
+
+Review the diff (`git diff origin/main...HEAD`) for the same correctness, security/error-handling
+and code-quality bar as a story review, scaled to the size of a single small commit - judge it
+against the merge-request issue's own description and `docs/ARCHITECTURE.md`, since there is no
+`docs/stories/<id>.md` or `docs/design/<id>.md` to check it against. Also check it actually stayed
+inside the storyless-fix eligibility line (no real design decision, no new test needed) - if it
+didn't, that is itself a blocking finding: send it back asking for a story instead of merging it.
+
+**Approve**: merge `fix/<issue-id>` into `main` and push, same as a story approval:
+`git checkout main && git pull --ff-only origin main && git merge --no-ff fix/<issue-id> -m "[<issue-id>] Merge fix/<issue-id>: <summary>"`,
+re-run the full suite on the merged result, `git push origin main`, then delete the now-merged
+branch (`git push origin --delete fix/<issue-id>`) - its content is fully preserved in `main`'s
+history via the merge commit. `bd comment` what you checked and the merge commit hash, close your
+issue.
+If main moved and the merge conflicts, handle it exactly like the story-review merge-conflict flow
+above, except: the rework issue is `role:engineer,stage:rework` with no `story:` label (route a
+test-only conflict to `role:qa` instead, same as above), and its description names `fix/<issue-id>`
+as the branch to resolve directly - there's no design/tests sub-branch on this path. Same
+discovered-from linking and reopen steps as above.
+
+**Request changes**: file one issue for the blocking finding, using the same fault-based routing as
+story rework - implementation defect -> `role:engineer`; the fix's own reasoning is unsound (or it
+oversteps the eligibility line above) -> `role:architect`; a test it touches is meaningfully
+weakened -> `role:qa` - `-p 1`, `stage:rework`, no `story:` label, description names `fix/<issue-id>`
+as the branch to fix up directly. Link it `bd dep add <finding> <your-issue> --type discovered-from`
+and `bd dep add <your-issue> <finding>`, set your issue back to open, stop.
+
+If a `fix/<issue-id>` merge-request has already been sent back twice (2 or more discovered-from
+`stage:rework` issues linked from it, not counting `merge-conflict` ones): `bd update <your-issue>
+--append-notes "<why it keeps failing review>"` then label it `needs-team-lead` instead of filing
+more.
