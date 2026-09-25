@@ -5,7 +5,7 @@
 # Claude Code session on it, check what happened, repeat. Beads is the only memory.
 set -uo pipefail
 
-ROLE="${ROLE:?ROLE must be set (po|architect|qa|engineer|reviewer)}"
+ROLE="${ROLE:?ROLE must be set (po|architect|qa|engineer|reviewer|team-lead)}"
 AGENT_ID="${AGENT_ID:-$ROLE}"
 KIT_DIR="${KIT_DIR:?KIT_DIR must be set}"           # this repo (docker-compose.yml, bin/, agents/)
 PROJECT_DIR="${PROJECT_DIR:?PROJECT_DIR must be set}"  # the real project - see bin/lib.sh
@@ -31,8 +31,21 @@ if [ "$CONTAINER_HOME" != "$HOME" ]; then
   echo "error: CONTAINER_HOME ($CONTAINER_HOME) != image HOME ($HOME). Set HOST_USER (and CONTAINER_HOME=/home/<HOST_USER>) in .env - re-run bin/init.sh after removing a stale CONTAINER_HOME line - then rebuild: docker compose build agent" >&2
   exit 1
 fi
-model_var="MODEL_${ROLE^^}"
+# ---------- model resolution ----------
+# Two tiers: team-lead (coordination/triage) gets the most capable model; the five execution
+# roles get a lower-capability default. Change these two values if the mapping drifts - no other
+# call site hardcodes a model name. An explicit MODEL_<ROLE> (below) always overrides its tier.
+TIER_TEAM_LEAD="${TIER_TEAM_LEAD:-opus}"
+TIER_STANDARD="${TIER_STANDARD:-sonnet}"
+
+# ROLE can contain a hyphen (team-lead); "-" is not legal in a bash variable name, so sanitize
+# before building the indirect-expansion name (MODEL_TEAM_LEAD, not MODEL_TEAM-LEAD).
+model_key="${ROLE^^}"; model_key="${model_key//-/_}"
+model_var="MODEL_${model_key}"
 MODEL="${!model_var:-}"
+if [ -z "$MODEL" ]; then
+  if [ "$ROLE" = "team-lead" ]; then MODEL="$TIER_TEAM_LEAD"; else MODEL="$TIER_STANDARD"; fi
+fi
 
 mkdir -p "$LOGDIR" "$STATE" "$CONTROL/cost"
 # shellcheck disable=SC1091
@@ -54,6 +67,15 @@ has_label()   { show_json "$1" | jq -e --arg l "$2" '(.labels // []) | index($l)
 is_ready()    { bd ready --limit 200 --json 2>/dev/null | jq -e --arg id "$1" '[.[]? | select(.id == $id)] | length > 0' >/dev/null 2>&1; }
 
 next_issue() {
+  if [ "$ROLE" = "team-lead" ]; then
+    bd list --label needs-team-lead --limit 50 --json 2>>"$LOGDIR/bd-err.log" | jq -r --arg me "$AGENT_ID" '
+      [ .[]?
+        | select(.status != "closed")
+        | select(((.labels // []) | index("needs-human")) | not)
+        | select(((.assignee // "") == "") or (.assignee == $me)) ]
+      | .[0].id // empty' 2>/dev/null
+    return
+  fi
   bd ready --label "role:$ROLE" --limit 50 --json 2>>"$LOGDIR/bd-err.log" | jq -r --arg me "$AGENT_ID" '
     [ .[]?
       | select(((.labels // []) | index("needs-human")) | not)
@@ -220,6 +242,9 @@ handle_outcome() {  # 0 = the agent did something legitimate with the issue, 1 =
     return 0
   fi
   if [ "$st" = "open" ] && ! is_ready "$id"; then log "$id parked behind new blockers (rework/handoff)"; return 0; fi
+  if [ "$ROLE" = "team-lead" ] && ! has_label "$id" needs-team-lead; then
+    log "$id triaged (needs-team-lead cleared)"; return 0
+  fi
   return 1
 }
 
@@ -297,7 +322,7 @@ if [ "$PREFLIGHT" = 1 ]; then
 fi
 
 release_stale
-log "started: role=$ROLE model=${MODEL:-default} max_turns=$MAX_TURNS timeout=$ITERATION_TIMEOUT"
+log "started: role=$ROLE model=$MODEL max_turns=$MAX_TURNS timeout=$ITERATION_TIMEOUT"
 
 # ---------- main loop ----------
 fails=0

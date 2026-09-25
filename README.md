@@ -73,6 +73,13 @@ than one project from the same kit checkout? Give each project its own
 `<project>/.agent-factory/.env` so their settings (model choice, budget caps, notification URL,
 etc.) don't leak into each other.
 
+**Model tiers**: each role's model comes from a two-tier default - `team-lead` (coordination/
+triage) runs on the most capable tier (currently Opus); the five execution roles (`po`,
+`architect`, `engineer`, `qa`, `reviewer`) run on a lower-capability tier (currently Sonnet). Set
+`MODEL_<ROLE>` in `.env` (e.g. `MODEL_QA=opus`) to override a single role's tier default; leave it
+empty to keep the tier default. Every startup logs the model actually resolved for that run
+(`role=... model=...`), tier default or override alike.
+
 ```bash
 cd ~/path/to/your/project    # NOT this kit's directory - this is the repo agents will work on
 /path/to/agent-factory/bin/init.sh    # first run creates <project>/.agent-factory/.env; defaults need no auth (reuses host ~/.claude); run again
@@ -97,6 +104,7 @@ uses server mode, but verify on your bd version.
 | Watch an agent | its pane in the `agents` window (rendered tool calls/text; Ctrl-b o to cycle, Ctrl-b q to jump by number); raw stream in `<project>/.agent-factory/logs/<role>/*.jsonl` |
 | Review-by-exception | `needs-human` list on the board; `bd show <id>` — the agent (or agent-loop.sh itself, on an attempt-cap/failure escalation) leaves a note on the issue explaining exactly what it needs; set `NOTIFY_URL` for push alerts |
 | Unstick an issue | answer what the issue's note asked for, then `approve.sh <id> -m "<answer>"` (or plain `approve.sh <id>`) |
+| Ask team-lead to triage a stuck issue | `bd label add <id> needs-team-lead`, then `ROLE=team-lead docker compose -f "$KIT_DIR/docker-compose.yml" run --rm --name factory-team-lead agent` from the `ops` window (not in the default `agents` pane layout yet - see `docs/ARCHITECTURE.md`) |
 | Pause / resume | `bin/stop.sh` (graceful) / `bin/stop.sh clear` then `bin/start.sh` — run from the same project directory |
 | Hard stop | `bin/stop.sh now` |
 | Restart one agent | `tmux list-panes -t factory:agents` for its index, then `tmux respawn-pane -k -t factory:agents.<index>` |
