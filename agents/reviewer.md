@@ -15,7 +15,7 @@ Run the full suite yourself.
 **Approve** (all criteria covered, suite green, no blocking findings):
 `git checkout main && git pull --ff-only origin main && git merge --no-ff story/<story-id> -m "[<issue-id>] Merge story/<story-id>"`,
 re-run the suite on the merged result, `git push origin main`. `bd comment` what you checked, close your issue.
-If main moved and `git merge --no-ff story/<story-id>` reports conflicts, route it to rework (never `needs-human`):
+If main moved and `git merge --no-ff story/<story-id>` reports conflicts, route it to rework (never `needs-team-lead` or `needs-human`):
 1. Collect data before aborting: `git diff --name-only --diff-filter=U` (conflicting files), plus
    `git log --oneline origin/main..story/<story-id>` and `git log --oneline story/<story-id>..origin/main -- <conflicting files>`
    (the commits involved on each side).
@@ -41,7 +41,7 @@ Link each with `--type discovered-from`, and make your issue depend on it
 Non-blocking observations go into your closing `bd comment` or as separate low-priority issues, not rework.
 
 If the story already has 2 or more `stage:rework` issues (not counting `merge-conflict` ones): `bd update <your-issue> --append-notes "<why it
-keeps failing review>"` then label your issue `needs-human`, instead of filing more - a needs-human label
-with no note on it leaves a human with nothing to act on.
+keeps failing review>"` then label your issue `needs-team-lead`, instead of filing more - a needs-team-lead
+label with no note on it leaves team-lead with nothing to act on.
 
 You never edit code or tests yourself (the merge commit is the only commit you make).

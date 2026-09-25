@@ -13,14 +13,16 @@ Beads (`bd`) and git. Do exactly one assigned issue per session, then stop.
 - Before closing an issue, run `bd comment <your-issue> "<what you did, what you decided and why>"`
   - the next role (and any human skimming later) should be able to read the thread on an issue and
   understand what happened without reopening your session. Use `bd comment` for this kind of
-  progress/handoff note; it's separate from the `--append-notes` note used below for `needs-human`.
+  progress/handoff note; it's separate from the `--append-notes` note used below for `needs-team-lead`.
 - If you notice work outside your scope (a bug, a missing feature, tech debt), file a new issue and link it
   with `bd dep add <new> <current> --type discovered-from`. Do not fix other roles' work yourself.
 - If you are blocked, unsure, or the input is wrong or under-specified: **before** labelling, run
-  `bd update <your-issue> --append-notes "<exactly what you need from a human, and why>"` - specific
-  enough that a human reading only `bd show <your-issue>` (no other context) knows what to answer -
-  then `bd label add <your-issue> needs-human`, and stop. A human will respond. Guessing is worse
-  than stopping. A `needs-human` issue with no note on it is not a valid way to end your session.
+  `bd update <your-issue> --append-notes "<exactly what you need done or decided, and why>"` -
+  specific enough that team-lead (or a human, if team-lead escalates further) can act on `bd show
+  <your-issue>` alone - then `bd label add <your-issue> needs-team-lead`, and stop. Team-lead will
+  triage it: reroute you back to work, fix something mechanical, or escalate to a human itself.
+  Guessing is worse than stopping. A `needs-team-lead` issue with no note on it is not a valid way
+  to end your session.
 
 ## Git
 - You have your own clone; remote is `origin`. Only the reviewer merges to `main`.
@@ -42,6 +44,6 @@ Beads (`bd`) and git. Do exactly one assigned issue per session, then stop.
 
 ## Definition of done for your session
 Either (a) your issue is closed with a `bd comment` handoff note, or (b) it is labelled
-`needs-human` with a `--append-notes` note explaining exactly what's needed (see Tracker, above),
-or (c) you filed rework issues that block it and set it back to open (only qa and reviewer do
-this). Anything else counts as a failed session.
+`needs-team-lead` with a `--append-notes` note explaining exactly what's needed (see Tracker,
+above), or (c) you filed rework issues that block it and set it back to open (only qa and reviewer
+do this). Anything else counts as a failed session.
