@@ -110,8 +110,14 @@ test_ac8_non_conflict_rework_unchanged() {
   # Existing needs-human escalation path intact.
   grep -q 'needs-human' bin/agent-loop.sh && grep -q 'MAX_ATTEMPTS_PER_ISSUE' bin/agent-loop.sh \
     || { fail "ac8: needs-human/attempt-cap escalation removed from agent-loop.sh"; return; }
-  grep -qE 'bd label add "\$id" needs-human' bin/agent-loop.sh \
-    || { fail "ac8: agent-loop.sh no longer labels needs-human at the cap"; return; }
+  # agent-factory-ulq/dx0: the literal needs-human label at the cap was replaced by a dynamic
+  # esc_label (needs-team-lead by default, needs-human when ROLE=team-lead).
+  grep -qE 'esc_label="needs-team-lead"' bin/agent-loop.sh \
+    || { fail "ac8: agent-loop.sh no longer defaults the attempt-cap escalation to needs-team-lead"; return; }
+  grep -qE '\[ "\$ROLE" = "team-lead" \] && esc_label="needs-human"' bin/agent-loop.sh \
+    || { fail "ac8: agent-loop.sh no longer overrides the attempt-cap escalation to needs-human for team-lead"; return; }
+  grep -qE 'bd label add "\$id" "\$esc_label"' bin/agent-loop.sh \
+    || { fail "ac8: agent-loop.sh no longer labels the computed esc_label at the cap"; return; }
   pass "ac8: restart restricted to conflict rework; ordinary escalation intact"
 }
 
