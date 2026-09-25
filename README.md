@@ -112,7 +112,7 @@ uses server mode, but verify on your bd version.
 
 ## Guardrails built in
 Per-session turn cap and wall-clock timeout; per-issue attempt cap (then `needs-human`); circuit breaker that stops
-an agent after N consecutive failed sessions and alerts; daily spend cap (`DAILY_BUDGET_USD`); WIP limit on the PO (`WIP_LIMIT`; stories stalled on a `needs-human` issue, or waiting behind one, are not counted);
+an agent after N consecutive failed sessions and alerts; daily spend cap (`DAILY_BUDGET_USD`); WIP limit on the PO (`WIP_LIMIT`; stories stalled on a `needs-human` issue, or waiting behind one, are not counted; the limit also yields - lets the PO start another story anyway - whenever architect, engineer, qa or reviewer would otherwise have nothing ready or in-progress for their role);
 STOP flags; startup preflight (bd reachable, credentials work); clean git slate every session, so unpushed work
 is discarded.
 
