@@ -60,11 +60,14 @@ test_ac2_definition_of_done_names_needs_team_lead() {
 # ac3, ac4, ac8: record_failure()/handle_outcome() behaviour, extracted from bin/agent-loop.sh
 # ---------------------------------------------------------------------------
 
-# Range covers log(), alert(), show_json/issue_field/has_label/is_ready, next_issue(), claim(),
-# release_stale(), in_flight()/wip_ok(), is_conflict_rework()/restart_story(), handle_outcome() and
-# record_failure() - no top-level execution in this range, so sourcing it is side-effect-free.
+# Anchored to function-name boundaries (not absolute line numbers) so this stays correct however
+# many lines unrelated merges insert or remove above it. Covers log(), alert(),
+# show_json/issue_field/has_label/is_ready, next_issue(), claim(), release_stale(),
+# in_flight()/wip_ok(), is_conflict_rework()/restart_story(), handle_outcome() and record_failure()
+# - everything from log() up to (not including) sync_dir(). No top-level execution in this range,
+# so sourcing it is side-effect-free.
 FNS="$TMP/fns.sh"
-sed -n '55,254p' bin/agent-loop.sh > "$FNS"
+sed -n '/^log()/,/^sync_dir()/{/^sync_dir()/d; p}' bin/agent-loop.sh > "$FNS"
 
 # run_record_failure ROLE ID MAX_ATTEMPTS -> BDLOG path; calls record_failure MAX_ATTEMPTS times.
 run_record_failure() {
