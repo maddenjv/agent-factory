@@ -73,6 +73,13 @@ than one project from the same kit checkout? Give each project its own
 `<project>/.agent-factory/.env` so their settings (model choice, budget caps, notification URL,
 etc.) don't leak into each other.
 
+**Model tiers**: each role's model comes from a two-tier default - `team-lead` (coordination/
+triage) runs on the most capable tier (currently Opus); the five execution roles (`po`,
+`architect`, `engineer`, `qa`, `reviewer`) run on a lower-capability tier (currently Sonnet). Set
+`MODEL_<ROLE>` in `.env` (e.g. `MODEL_QA=opus`) to override a single role's tier default; leave it
+empty to keep the tier default. Every startup logs the model actually resolved for that run
+(`role=... model=...`), tier default or override alike.
+
 ```bash
 cd ~/path/to/your/project    # NOT this kit's directory - this is the repo agents will work on
 /path/to/agent-factory/bin/init.sh    # first run creates <project>/.agent-factory/.env; defaults need no auth (reuses host ~/.claude); run again
