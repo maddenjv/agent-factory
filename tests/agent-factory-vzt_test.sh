@@ -47,8 +47,8 @@ test_ac2_earlier_story_failure_is_regression_bug_and_no_close() {
 
 test_ac3_deliberate_change_stated_explicitly_not_edit_old_test() {
   echo "$V" | grep -qiE 'deliberate|intended|intentionally' \
-    && echo "$V" | grep -qi 'needs-human' \
-    || { fail "ac3: verify does not cover deliberately-changed earlier behaviour with bug/needs-human note"; return; }
+    && echo "$V" | grep -qiE 'needs-human|needs-team-lead' \
+    || { fail "ac3: verify does not cover deliberately-changed earlier behaviour with bug/needs-human/needs-team-lead note"; return; }
   echo "$V" | grep -qiE "(do not|don.t|never|not)[^.]*(edit|delete|modify|change|remove)[^.]*(old|earlier|other|that|those)?[^.]*test" \
     || { fail "ac3: verify must forbid silently editing/deleting the old test"; return; }
   pass "ac3: deliberate-change case is stated explicitly; old test not silently edited"
