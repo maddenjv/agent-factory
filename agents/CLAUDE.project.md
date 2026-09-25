@@ -37,6 +37,28 @@ Beads (`bd`) and git. Do exactly one assigned issue per session, then stop.
   Anything not pushed is lost when your session ends.
 - Stage explicit paths (`git add path/...`). Never `git add -A` / `git add .`, and never commit anything under `.beads/`.
 
+## Storyless fix work
+Small, self-contained `discovered-from` follow-ups that need no new design decision and no new
+test - a stale doc line, a one-line test fix, anything the issue that found it already fully
+scopes - skip the story chain entirely:
+- Branch `fix/<issue-id>` from `origin/main` (never from a `story/` branch), commit prefixed
+  `[<issue-id>]`, `git push origin fix/<issue-id>` after every commit.
+- If it turns out to need a new design decision or a new test to be trustworthy, stop and make it
+  a full story instead (`po` writes `docs/stories/<new-id>.md`; `bin/new-story.sh` cuts the
+  branch) - don't force it through this path.
+- Do not close your own issue with just a comment claiming it needs merging - nothing reads that comment, and it strands the branch exactly like fix/agent-factory-367/-3lg/-wqd did. File the merge request as a real, actionable issue instead, before closing your own issue:
+  ```
+  bd create "Merge fix/<issue-id> to main: <one-line summary>" -t task -p 2 -l role:reviewer,stage:review \
+    -d "<what changed and why - enough for the reviewer to judge it with no story or design doc to check against>"
+  ```
+  Deliberately no `story:` label and no `docs/stories/<id>.md` - that's what routes it to the
+  reviewer's normal queue without needing either (see `docs/ARCHITECTURE.md`'s "Getting work to
+  main").
+- Link it to your own issue (`bd dep add <merge-issue> <your-issue> --type discovered-from`), then
+  close your own issue with the usual `bd comment`, naming the merge-issue id.
+- The reviewer reviews and merges it (or sends it back) exactly like a story review, scaled to the
+  size of the change - see `agents/reviewer.md`'s "Storyless fix review".
+
 ## Files
 - `docs/stories/<story-id>.md` - the user story + acceptance criteria (PO)
 - `docs/design/<story-id>.md` - implementation design (architect)
