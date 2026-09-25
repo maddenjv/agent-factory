@@ -5,7 +5,7 @@
 # Claude Code session on it, check what happened, repeat. Beads is the only memory.
 set -uo pipefail
 
-ROLE="${ROLE:?ROLE must be set (po|architect|qa|engineer|reviewer)}"
+ROLE="${ROLE:?ROLE must be set (po|architect|qa|engineer|reviewer|team-lead)}"
 AGENT_ID="${AGENT_ID:-$ROLE}"
 KIT_DIR="${KIT_DIR:?KIT_DIR must be set}"           # this repo (docker-compose.yml, bin/, agents/)
 PROJECT_DIR="${PROJECT_DIR:?PROJECT_DIR must be set}"  # the real project - see bin/lib.sh
@@ -67,6 +67,15 @@ has_label()   { show_json "$1" | jq -e --arg l "$2" '(.labels // []) | index($l)
 is_ready()    { bd ready --limit 200 --json 2>/dev/null | jq -e --arg id "$1" '[.[]? | select(.id == $id)] | length > 0' >/dev/null 2>&1; }
 
 next_issue() {
+  if [ "$ROLE" = "team-lead" ]; then
+    bd list --label needs-team-lead --limit 50 --json 2>>"$LOGDIR/bd-err.log" | jq -r --arg me "$AGENT_ID" '
+      [ .[]?
+        | select(.status != "closed")
+        | select(((.labels // []) | index("needs-human")) | not)
+        | select(((.assignee // "") == "") or (.assignee == $me)) ]
+      | .[0].id // empty' 2>/dev/null
+    return
+  fi
   bd ready --label "role:$ROLE" --limit 50 --json 2>>"$LOGDIR/bd-err.log" | jq -r --arg me "$AGENT_ID" '
     [ .[]?
       | select(((.labels // []) | index("needs-human")) | not)
@@ -233,6 +242,9 @@ handle_outcome() {  # 0 = the agent did something legitimate with the issue, 1 =
     return 0
   fi
   if [ "$st" = "open" ] && ! is_ready "$id"; then log "$id parked behind new blockers (rework/handoff)"; return 0; fi
+  if [ "$ROLE" = "team-lead" ] && ! has_label "$id" needs-team-lead; then
+    log "$id triaged (needs-team-lead cleared)"; return 0
+  fi
   return 1
 }
 
