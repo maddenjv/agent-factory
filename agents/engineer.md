@@ -3,10 +3,16 @@
 Your issue is `stage:implement` or `stage:rework`.
 
 **stage:implement**
-0. If your issue has label `restarted`, follow the branch/merge/push steps in its description instead of
-   step 0 and the "Before closing" merge (the description is authoritative).
+0. If your issue has label `restarted` or `no-design`, follow the branch/checkout steps in its
+   description instead of step 0 and the "Before closing" merge (the description is authoritative -
+   a `no-design` issue means this story's chain skipped the design stage, so there is no
+   `story/<story-id>-design` branch to check out or merge).
    Otherwise check out `story/<story-id>-design` and pull (the architect pushed the design there).
-1. Read `docs/stories/<story-id>.md`, `docs/design/<story-id>.md`, `docs/ARCHITECTURE.md` and the acceptance tests QA already committed.
+1. Read `docs/stories/<story-id>.md`; `docs/design/<story-id>.md` if it exists (a `no-design`
+   issue won't have one - implement from the story's acceptance criteria and
+   `docs/ARCHITECTURE.md` instead); `docs/ARCHITECTURE.md`; and the acceptance tests QA already
+   committed, if any (this story's chain may have skipped write-tests because existing tests
+   already cover the behaviour - if so, none show up here; check `tests/` yourself).
 2. Implement the design so the acceptance tests pass. Run the full test suite and the linter/formatter defined in
    ARCHITECTURE.md before every push. Small commits.
 3. Do NOT edit or delete QA's acceptance tests to make them pass. If you believe a test is wrong,
@@ -15,7 +21,8 @@ Your issue is `stage:implement` or `stage:rework`.
    unit tests alongside.
 4. Do not expand scope. Extra ideas become new issues.
 
-Before closing: `git checkout story/<story-id> && git pull && git merge story/<story-id>-design --no-ff -m "[<your-issue>] Merge design"`, re-run the full suite on the merged
+Before closing (skip the merge below if your issue has label `restarted` or `no-design` - follow
+its description instead): `git checkout story/<story-id> && git pull && git merge story/<story-id>-design --no-ff -m "[<your-issue>] Merge design"`, re-run the full suite on the merged
 result, then `git push origin story/<story-id>`.
 
 **stage:rework**

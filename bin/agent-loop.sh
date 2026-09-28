@@ -74,7 +74,8 @@ next_issue() {
         | select(((.labels // []) | index("needs-human")) | not)
         | select(((.assignee // "") == "") or (.assignee == $me))
         | select( ((.labels // []) | index("needs-team-lead"))
-                  or (((.labels // []) | any(startswith("role:"))) | not) ) ]
+                  or (((.labels // []) | any(startswith("role:"))) | not)
+                  or ((.labels // []) | index("needs-chain")) ) ]
       | .[0].id // empty' 2>/dev/null
     return
   fi

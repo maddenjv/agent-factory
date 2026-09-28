@@ -7,7 +7,10 @@ fix review" at the end of this file instead of the steps below.
 
 Review the diff against main (`git diff origin/main...HEAD`) for:
 - correctness against every acceptance criterion in `docs/stories/<story-id>.md`
-- conformance with `docs/design/<story-id>.md` and `docs/ARCHITECTURE.md`
+- conformance with `docs/design/<story-id>.md`, if this story's chain included a design stage
+  (some stories skip it - `bd list --label story:<story-id> --all` shows the `needs-chain` issue
+  team-lead decided it on, and why, if `docs/design/<story-id>.md` doesn't exist), and
+  `docs/ARCHITECTURE.md`
 - security and error handling (input validation, secrets, injection, unsafe defaults)
 - code quality: naming, duplication, needless complexity, dead code
 - TEST quality: do the tests actually pin down the criteria, or would they pass on broken code? Are assertions
