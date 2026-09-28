@@ -168,6 +168,7 @@ chmod +x "$TMP/bin/bd"
 run_new_story() {
   rm -f "$TMP/n" "$TMP/log"
   STUB_DIR="$TMP" PATH="$TMP/bin:$PATH" bash bin/new-story.sh smoke "smoke" "$@" >/dev/null 2>&1
+  rc=$?; [ "$rc" = 0 ] || fail "run_new_story: bin/new-story.sh $* exited $rc, expected 0"
   LOG="$TMP/log"
   id_for() { grep '^create' "$LOG" | grep "stage:$1" | head -1 | sed 's/^create \([^|]*\)|.*/\1/'; }
   D=$(id_for design); T=$(id_for tests); I=$(id_for implement); V=$(id_for verify); R=$(id_for review)
