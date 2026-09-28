@@ -80,12 +80,28 @@ test_ac3_normal_and_dependency_blocked_story_still_counts() {
 test_ac4_released_story_counts_again() {
   local out
   out=$( { chain a; chain b needs-human; } | run po 2); [ "$out" = "1 1" ] || { fail "ac4: precondition got '$out'"; return; }
-  out=$( { chain a; chain b; } | run po 2)
+  # chain()'s qa/reviewer stages are always blocked behind the still-open earlier stage, so they
+  # never read as "ready"; mark story b's qa/reviewer issues in_progress (busy regardless of
+  # dependency state) and add an open architect issue, so all four downstream roles are actually
+  # busy and agent-factory-1e8r's idle_downstream_role fail-safe doesn't mask the WIP_LIMIT boundary.
+  out=$( { chain a
+           issue b-impl b engineer open
+           issue b-ver b qa in_progress "" b-impl
+           issue b-rev b reviewer in_progress "" b-ver
+           issue z-design z architect open; } | run po 2)
   [ "$out" = "2 0" ] && pass "ac4: after needs-human removed the story counts and PO is held" || fail "ac4: got '$out', expected '2 0'"
 }
 
 test_ac5_limit_still_holds_with_stalled_others() {
-  local out; out=$( { chain a; chain b; chain c needs-human; chain d needs-human; } | run po 2)
+  # Same all-four-roles-busy construction as ac4 (see comment there) so idle_downstream_role()
+  # (agent-factory-1e8r) doesn't see architect/qa/reviewer as idle and let the PO through despite
+  # being at WIP_LIMIT, masking the boundary this test is meant to pin.
+  local out; out=$( { chain a
+           issue b-impl b engineer open
+           issue b-ver b qa in_progress "" b-impl
+           issue b-rev b reviewer in_progress "" b-ver
+           chain c needs-human; chain d needs-human
+           issue z-design z architect open; } | run po 2)
   [ "$out" = "2 0" ] || { fail "ac5: got '$out', expected '2 0'"; return; }
   out=$( { chain a; chain b; chain c needs-human; } | run engineer 2)
   [ "${out#* }" = "1" ] && pass "ac5: limit unchanged for PO; non-PO roles unaffected" || fail "ac5: non-PO role got '$out'"
