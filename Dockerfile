@@ -6,10 +6,10 @@
 # bd is pulled with `go install ...@latest` (see docs/ARCHITECTURE.md "Dependency policy"); if
 # `bd` CLI flags agent-loop.sh relies on ever drift, see README.md "Things I could not test" #3.
 
-FROM golang:1.23-bookworm AS bd-builder
+FROM golang:bookworm AS bd-builder
 RUN CGO_ENABLED=0 go install -tags gms_pure_go github.com/steveyegge/beads/cmd/bd@latest
 
-FROM node:22-bookworm-slim
+FROM node:bookworm-slim
 
 ARG HOST_UID=1000
 ARG HOST_GID=1000
@@ -21,7 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN npm install -g @anthropic-ai/claude-code
 
-COPY --from=bd-builder /root/go/bin/bd /usr/local/bin/bd
+COPY --from=bd-builder /go/bin/bd /usr/local/bin/bd
 RUN ln -s bd /usr/local/bin/beads
 
 # node:22-bookworm-slim already ships a 'node' user/group at uid/gid 1000 (the default
