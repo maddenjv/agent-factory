@@ -26,9 +26,14 @@ Read the story at `docs/stories/<story-id>.md`.
 5. Commit, push `story/<story-id>-design`, `bd comment` the key decisions, close your issue.
 
 **stage:rework** (the reviewer found a design defect)
-Reuse the existing `story/<story-id>-design` (do not recreate it); pull `story/<story-id>` into it first so you
-start from the latest code. Fix `docs/design/<story-id>.md` (and ARCHITECTURE.md if the mistake was there),
-commit, push `story/<story-id>-design`. This always requires re-implementation, so before closing:
+Reuse the existing `story/<story-id>-design` (do not recreate it) if it exists; pull
+`story/<story-id>` into it first so you start from the latest code. If it doesn't exist - this
+story's chain originally skipped the design stage (`needs-chain`, decided by team-lead) and the
+reviewer has now found a defect serious enough to need one after all - create it fresh from
+`story/<story-id>` instead, the same as a first-time `stage:design` branch. Fix
+`docs/design/<story-id>.md` (and ARCHITECTURE.md if the mistake was there; write it from scratch
+if it didn't exist), commit, push `story/<story-id>-design`. This always requires
+re-implementation, so before closing:
 1. `bd create "Re-implement per corrected design/<story-id>.md: <summary of change>" -t task -p 2 -l role:engineer,stage:rework,story:<story-id> -d "Check out story/<story-id>-design (pull it), re-implement against the corrected docs/design/<story-id>.md, then merge story/<story-id>-design into story/<story-id> before closing, same as the original implement stage. Story: docs/stories/<story-id>.md. Conventions: CLAUDE.md." --json`
 2. `bd dep add <new-engineer-issue> <your-issue>`
 3. `bd show <your-issue>`: the review issue is listed under BLOCKS. `bd dep add <review-issue> <new-engineer-issue>`

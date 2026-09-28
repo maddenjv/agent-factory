@@ -13,9 +13,14 @@ Your issue is `stage:tests`, `stage:verify`, or `stage:rework`. You never modify
 3. Commit, push `story/<story-id>-tests`, `bd comment` which criteria map to which tests, close.
 
 **stage:verify** (implementation is done)
-1. Check out `story/<story-id>` and pull (it has the design track merged in). Merge your write-tests work: `git merge story/<story-id>-tests --no-ff -m "[<your-issue>] Merge tests"`, push
+1. Check out `story/<story-id>` and pull (the design track, if this story's chain included one, is
+   already merged in). If your issue has label `no-tests`, there is no `story/<story-id>-tests`
+   branch - skip the merge below (existing tests were judged to already cover this behaviour;
+   confirm that for yourself as you verify). Otherwise merge your write-tests work: `git merge story/<story-id>-tests --no-ff -m "[<your-issue>] Merge tests"`, push
    `story/<story-id>`. Run the full accumulated suite on this merged result (see step 1a). Then exercise the behaviour for real where possible (run the CLI/service, call the
-   endpoint) and walk every acceptance criterion; add edge-case and negative tests you think are missing.
+   endpoint) and walk every acceptance criterion; add edge-case and negative tests you think are
+   missing - this matters even more when `no-tests` skipped write-tests, since your own tests here
+   may be the first ones pinning down this behaviour.
 1a. **Full suite.** Run every test script under `tests/` (all stories', not only this story's, including
    `tests/acceptance/`): `find tests -type f \( -name '*_test.sh' -o -path 'tests/acceptance/*.sh' \) | sort`,
    then `bash <script>` for each from the repo root. Keep going after a failure. Read failing output before
