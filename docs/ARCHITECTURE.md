@@ -6,7 +6,7 @@ project, coordinated through Beads (`bd`) and git. There is no application sourc
 to compile; "the code" is the `bin/*.sh` scripts, `docker-compose.yml`, the `Dockerfile` for the
 `agent` image, and the per-role prompts under `agents/`.
 
-A sixth role, `team-lead`, triages three kinds of work: issues explicitly labelled
+A sixth role, `team-lead`, triages four kinds of work: issues explicitly labelled
 `needs-team-lead` (a stuck piece of work another role flagged); open issues that carry no
 `role:*` label at all and aren't `needs-human`/`needs-team-lead` (since `agent-factory-m7af`),
 i.e. work that reached the board outside the normal `feature.sh` intake path; and - since
@@ -19,7 +19,14 @@ investigating issues that may be blocked, unrouted, or not built yet). It rerout
 the correct role/stage, fixes it directly, routes a no-story-context issue to `role:po`, sizes a
 new story's chain, or escalates to `needs-human` - see `agents/team-lead.md`. It runs on the most
 capable model tier (`agent-factory-250`) and has its own pane in `bin/start.sh`'s tmux layout
-(`agent-factory-uhc`).
+(`agent-factory-uhc`). Since `agent-factory-q4tj`, it also runs a fourth, issue-less kind of session
+on a timer (`THROTTLE_STALE_SECS`, default 900s): it judges whether `po`/`architect` should keep
+starting new top-of-funnel work, based on how deep the `engineer`/`qa`/`reviewer` backlog has grown
+(including stories that only have a `needs-chain` issue open) and how much usage quota/budget
+remains, and records that judgment - with a reason - in `.agent-factory/control/throttle.json`
+(`bin/set-throttle.sh`). `bin/agent-loop.sh`'s `throttle_ok()` reads it for `po`/`architect` only;
+`engineer`/`qa`/`reviewer` are never throttled by it, and a missing/stale file fails open (see
+`docs/design/agent-factory-q4tj.md`'s Error cases) rather than wedging the whole factory.
 
 ## Stack
 - **Orchestration**: `bash` scripts under `bin/` (`lib.sh` holds shared helpers; every other

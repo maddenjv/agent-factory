@@ -22,7 +22,8 @@ ITERATION_TIMEOUT="${ITERATION_TIMEOUT:-45m}"
 IDLE_SLEEP="${IDLE_SLEEP:-60}"
 MAX_ATTEMPTS_PER_ISSUE="${MAX_ATTEMPTS_PER_ISSUE:-2}"
 MAX_CONSECUTIVE_FAILURES="${MAX_CONSECUTIVE_FAILURES:-3}"
-WIP_LIMIT="${WIP_LIMIT:-2}"
+THROTTLE_STALE_SECS="${THROTTLE_STALE_SECS:-900}"        # how often team-lead re-assesses
+THROTTLE_ALERT_STALE_SECS="${THROTTLE_ALERT_STALE_SECS:-3600}"  # alert if it falls further behind than this
 DAILY_BUDGET_USD="${DAILY_BUDGET_USD:-}"
 PREFLIGHT="${PREFLIGHT:-1}"
 QUOTA_RETRY_INTERVAL="${QUOTA_RETRY_INTERVAL:-900}"  # fallback poll interval when a reset time can't be parsed
@@ -105,47 +106,47 @@ release_stale() {  # anything still in_progress under our name at startup is lef
 }
 
 # ---------- throttles ----------
-in_flight() {  # stories whose review issue is not yet closed, minus those stalled on a needs-human/needs-team-lead issue
-  bd list --json 2>/dev/null | jq '
-    [ .[]? | select(.status != "closed") ] as $open
-    | ($open | map({key: .id, value: ((.labels // []) | (index("needs-human") != null) or (index("needs-team-lead") != null))}) | from_entries) as $stalled_lbl
-    | ( [ $open[]
-          | select(($stalled_lbl[.id]) or ([ (.dependencies // [])[] | select(.type == "blocks") | $stalled_lbl[.depends_on_id] ] | any))
-          | (.labels // [])[] | select(startswith("story:")) ] | unique ) as $stalled
-    | [ $open[]
-        | select((.labels // []) | index("role:reviewer"))
-        | select(([ (.labels // [])[] | select(startswith("story:")) ] | any(. as $s | $stalled | index($s))) | not)
-      ] | length' 2>/dev/null
-}
-idle_downstream_role() {  # true if architect, engineer, qa or reviewer has no ready or in-progress,
-                          # non-stalled role:<role> issue - i.e. the PO could unblock it by starting
-                          # another story. "Ready" mirrors bd ready: open, and every "blocks"
-                          # dependency is resolved (closed - either absent from bd list's default
-                          # open/in_progress-only output, or explicitly status:"closed" in a test
-                          # fixture). Same needs-human/needs-team-lead stall exclusion as in_flight().
-  local list; list=$(bd list --json 2>/dev/null)
-  [ -n "$list" ] || return 1   # bd unreachable -> fail safe, same as in_flight() -> wip_ok false
-  printf '%s' "$list" | jq -e '
-    (map({key: .id, value: .status}) | from_entries) as $status
-    | (map({key: .id, value: (((.labels // []) | index("needs-human")) != null
-                               or ((.labels // []) | index("needs-team-lead")) != null)})
-       | from_entries) as $stalled
-    | ["architect","engineer","qa","reviewer"] as $roles
-    | [ .[]
-        | select(.status != "closed")
-        | select($stalled[.id] | not)
-        | select(.status == "in_progress"
-                 or (.status == "open"
-                     and ([ (.dependencies // [])[] | select(.type == "blocks")
-                            | ($status[.depends_on_id] // "closed") ]
-                          | all(. == "closed"))))
-        | (.labels // [])[] | select(startswith("role:")) | ltrimstr("role:")
-      ] as $active
-    | ($roles - ($active | unique)) | length > 0
-  ' >/dev/null 2>&1
+# team-lead-driven WIP throttle (agent-factory-q4tj): po and architect - top-of-funnel - start new
+# work only while team-lead judges the engineer/qa/reviewer backlog has room and usage quota is
+# likely to last. team-lead is never throttled by this (it has to keep running to produce the
+# assessment), and engineer/qa/reviewer are never throttled by it either - only po/architect are
+# top-of-funnel. The judgment itself lives entirely in team-lead's own Claude Code session
+# (agents/team-lead.md's "Assess the po/architect throttle") - nothing here second-guesses it;
+# this is just the plumbing that reads its last recorded decision and keeps it fresh.
+THROTTLE_FILE="$CONTROL/throttle.json"
+
+throttle_age() {  # seconds since the last recorded assessment, or a large number if there is none
+  local ts epoch
+  ts=$(jq -r '.assessed_at // empty' "$THROTTLE_FILE" 2>/dev/null)
+  [ -n "$ts" ] || { echo 999999; return; }
+  epoch=$(date -d "$ts" +%s 2>/dev/null) || { echo 999999; return; }
+  echo $(( $(date +%s) - epoch ))
 }
 
-wip_ok() { [ "$ROLE" != "po" ] && return 0; [ "$(in_flight)" -lt "$WIP_LIMIT" ] 2>/dev/null && return 0; idle_downstream_role; }
+throttle_ok() {  # false only for po/architect, and only once team-lead has recorded idle:true.
+                  # No assessment yet (fresh run, or team-lead falling behind) fails OPEN - po and
+                  # architect proceed. Deliberate: DAILY_BUDGET_USD and the Claude Code plan usage
+                  # limit (both enforced unconditionally elsewhere in this loop) are the hard stops
+                  # against runaway spend; this is a softer "don't start work you can't finish"
+                  # layer on top of those, and a missing/stale file must not silently wedge the
+                  # whole factory at the top of the funnel just because team-lead's own loop
+                  # hiccuped - see throttle_stale_alert() below for how a human finds out that
+                  # happened instead.
+  case "$ROLE" in po|architect) ;; *) return 0 ;; esac
+  [ -f "$THROTTLE_FILE" ] || return 0
+  jq -e '.idle != true' "$THROTTLE_FILE" >/dev/null 2>&1
+}
+
+throttle_stale_alert() {  # team-lead only, see main loop - alerts once when assessments stop
+                           # arriving, resets once they resume so a later real staleness re-alerts
+  local age; age=$(throttle_age)
+  if [ "$age" -ge "$THROTTLE_ALERT_STALE_SECS" ]; then
+    [ "$throttle_stale_alerted" = 1 ] || alert "throttle assessment stale (${age}s > ${THROTTLE_ALERT_STALE_SECS}s) - po/architect are running unthrottled in the meantime"
+    throttle_stale_alerted=1
+  else
+    throttle_stale_alerted=0
+  fi
+}
 
 spent_today() { cat "$CONTROL"/cost/*."$(date +%F)" 2>/dev/null | awk '{s+=$1} END{printf "%.2f", s+0}'; }
 budget_ok()   { [ -z "$DAILY_BUDGET_USD" ] || awk -v s="$(spent_today)" -v b="$DAILY_BUDGET_USD" 'BEGIN{exit !(s<b)}'; }
@@ -227,11 +228,18 @@ build_prompt() {
   printf '\n\n---\nYour assigned issue: %s\nRepository: %s (your own clone; remote "origin"). Shared conventions are in CLAUDE.md.\nStart with: bd show %s\n' "$1" "$REPO" "$1"
 }
 
-run_agent() {  # sets LAST_RUN_QUOTA_MSG (empty unless this run hit a usage limit)
-  local id=$1 logfile errfile outfile cost
-  logfile="$LOGDIR/$(date +%F).$id.jsonl"
+build_throttle_prompt() {
+  cat "$KIT_DIR/agents/team-lead.md"
+  printf '\n\n---\nNo bd issue this session: assess the po/architect throttle now (see "Assess the po/architect throttle" above), then record it with bin/set-throttle.sh - that is the only place this decision is recorded, so do not skip it.\nRepository: %s (your own clone; remote "origin"). Shared conventions are in CLAUDE.md. KIT_DIR=%s PROJECT_DIR=%s\n' "$REPO" "$KIT_DIR" "$PROJECT_DIR"
+}
+
+run_claude_session() {  # run_claude_session LOGNAME PROMPT -> sets LAST_RUN_QUOTA_MSG (empty
+                         # unless this run hit a usage limit); shared by run_agent() (one bd issue)
+                         # and run_throttle_assessment() (no bd issue).
+  local logname=$1 prompt=$2 logfile errfile outfile cost
+  logfile="$LOGDIR/$(date +%F).$logname.jsonl"
   errfile=$(mktemp); outfile=$(mktemp)
-  local args=(-p "$(build_prompt "$id")" --dangerously-skip-permissions --max-turns "$MAX_TURNS"
+  local args=(-p "$prompt" --dangerously-skip-permissions --max-turns "$MAX_TURNS"
               --output-format stream-json --verbose)
   [ -n "$MODEL" ] && args+=(--model "$MODEL")
   ( cd "$REPO" && timeout "$ITERATION_TIMEOUT" claude "${args[@]}" 2>"$errfile" ) \
@@ -243,6 +251,9 @@ run_agent() {  # sets LAST_RUN_QUOTA_MSG (empty unless this run hit a usage limi
   [ -n "$LAST_RUN_QUOTA_MSG" ] || LAST_RUN_QUOTA_MSG=$(quota_hit_from_stream "$outfile")
   rm -f "$errfile" "$outfile"
 }
+
+run_agent() { run_claude_session "$1" "$(build_prompt "$1")"; }               # sets LAST_RUN_QUOTA_MSG
+run_throttle_assessment() { run_claude_session throttle "$(build_throttle_prompt)"; }  # sets LAST_RUN_QUOTA_MSG
 
 # ---------- outcome handling ----------
 is_conflict_rework() { has_label "$1" stage:rework && has_label "$1" merge-conflict; }
@@ -356,13 +367,39 @@ log "started: role=$ROLE model=$MODEL max_turns=$MAX_TURNS timeout=$ITERATION_TI
 # ---------- main loop ----------
 fails=0
 idle_logged=0
+throttle_idle_logged=0
+throttle_stale_alerted=0
 while :; do
   if stopping; then log "STOP requested; exiting"; exit 0; fi
   if ! budget_ok; then alert "daily budget reached ($(spent_today) USD); pausing 30 min"; sleep 1800; continue; fi
-  if ! wip_ok; then sleep "$IDLE_SLEEP"; continue; fi
+
+  [ "$ROLE" = "team-lead" ] && throttle_stale_alert
+
+  if ! throttle_ok; then
+    if [ "$throttle_idle_logged" != 1 ]; then
+      log "idle: team-lead throttle holding $ROLE back ($(jq -r '.reason // "no reason recorded"' "$THROTTLE_FILE" 2>/dev/null))"
+      throttle_idle_logged=1
+    fi
+    sleep "$IDLE_SLEEP"; continue
+  fi
+  throttle_idle_logged=0
 
   id=$(next_issue)
   if [ -z "$id" ]; then
+    if [ "$ROLE" = "team-lead" ] && [ "$(throttle_age)" -ge "$THROTTLE_STALE_SECS" ]; then
+      log "no triage work; throttle assessment due (last one $(throttle_age)s ago)"
+      if sync_repo; then
+        run_throttle_assessment
+        if [ -n "$LAST_RUN_QUOTA_MSG" ]; then
+          wait_s=$(usage_limit_wait_seconds "$LAST_RUN_QUOTA_MSG")
+          alert "throttle assessment: usage limit hit ($LAST_RUN_QUOTA_MSG); waiting ${wait_s}s"
+          sleep "$wait_s"; continue
+        fi
+      else
+        log "git sync failed; throttle assessment skipped this cycle"
+      fi
+      sleep "$IDLE_SLEEP"; continue
+    fi
     [ "$idle_logged" = 1 ] || { log "queue empty; idling"; idle_logged=1; }
     sleep "$IDLE_SLEEP"; continue
   fi
