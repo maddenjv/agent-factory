@@ -69,4 +69,6 @@ bd dep add "$v" "$i"                  # verify depends on implement
 bd dep add "$r" "$v"                  # review depends on verify
 
 echo "story $sid: design=${d:-skipped} tests=${t:-skipped} implement=$i verify=$v review=$r"
-[ -n "$gate" ] && echo "design issue $d is gated: run approve.sh $d to release it"
+if [ -n "$gate" ]; then
+  echo "design issue $d is gated: run approve.sh $d to release it"
+fi
