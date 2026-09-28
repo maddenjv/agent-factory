@@ -14,6 +14,9 @@
 # env vars and mounted at their own real host paths. All of agent-factory's own runtime state
 # (workspaces, control, logs, claude config, the dolt db) lives under PROJECT_DIR/.agent-factory,
 # so it travels with the project instead of being buried inside this kit - see bin/lib.sh.
+# `dc()` also passes `--env-file` so `HOST_UID`/`HOST_GID`/`HOST_USER`/`CONTAINER_HOME` in that
+# file actually reach the `${VAR:-default}` interpolation below, not just the container's runtime
+# env (see docs/design/agent-factory-wpq4.md).
 name: agent-factory
 services:
   dolt:
@@ -69,7 +72,10 @@ services:
       - ${PROJECT_DIR}:${PROJECT_DIR}
       # CONTAINER_HOME and HOST_USER are populated into .env by bin/init.sh (mirroring
       # HOST_UID/HOST_GID) and must agree with the image's account home - see bin/init.sh and agent-loop.sh's own
-      # comment on sync_configs() for why the default can't just be changed freely.
+      # comment on sync_configs() for why the default can't just be changed freely. They (and
+      # HOST_UID/HOST_GID above and dolt's `user:`) only reach this interpolation because
+      # bin/lib.sh's `dc()` and bin/start.sh's run commands pass `--env-file`, not just by
+      # coincidence of shell-exported defaults.
       - ${PROJECT_DIR}/.agent-factory/claude/${ROLE:-shell}:${CONTAINER_HOME:-/home/${HOST_USER:-agent}}/.claude
       - ${HOME}/.claude:${CONTAINER_HOME:-/home/${HOST_USER:-agent}}/.claude-host:ro
       - ai-dev-kit:${CONTAINER_HOME:-/home/${HOST_USER:-agent}}/.ai-dev-kit

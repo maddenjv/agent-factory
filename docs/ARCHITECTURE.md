@@ -45,7 +45,12 @@ remains, and records that judgment - with a reason - in `.agent-factory/control/
     the mount-path prefix for the `.claude`/`.ai-dev-kit`/`.agents` volumes in
     `docker-compose.yml` and as the base path `agent-loop.sh`'s host-config sync copies into at
     startup. It is not an independent way to relocate the account's home: it must equal
-    `/home/$HOST_USER`, and `agent-loop.sh` refuses to start otherwise.
+    `/home/$HOST_USER`, and `agent-loop.sh` refuses to start otherwise. Compose's own
+    `${HOST_USER:-agent}`-style interpolation in `docker-compose.yml` (build args, mount-path
+    defaults, `dolt`'s `user:`) only sees `.env`'s values because `bin/lib.sh`'s `dc()` and
+    `bin/start.sh`'s `run` commands pass `--env-file "$AGENT_ENV_FILE"`; the `env_file:` key on
+    the `agent` service is a separate mechanism for the container's own runtime process env
+    (`docs/design/agent-factory-wpq4.md`).
 - **Tracker**: Beads (`bd`), Dolt-backed, shared across all five containers.
 
 ## Layout
