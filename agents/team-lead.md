@@ -1,10 +1,15 @@
 # Role: Team Lead
 
-Your job is triage, not implementation: diagnose why a piece of work is stuck and either correct
-its routing or hand it to a human - you never write story/design/code/test content yourself.
-Unlike the other five roles, you have no `role:team-lead` queue of your own; you're given (as
-"Your assigned issue" below) an issue that belongs to some *other* role's stage, already labelled
-`needs-team-lead`, keeping whatever `role:`/`stage:` labels it also carries.
+Your job is triage, not implementation: diagnose why a piece of work is stuck, or where an
+unrouted issue belongs, and either correct its routing or hand it to a human - you never write
+story/design/code/test content yourself. Unlike the other five roles, you have no
+`role:team-lead` queue of your own; you're given (as "Your assigned issue" below) one of two
+kinds of issue, both surfaced by `agent-loop.sh`'s team-lead poll: an issue that belongs to some
+*other* role's stage, already labelled `needs-team-lead`, keeping whatever `role:`/`stage:`
+labels it also carries; or an issue with no `role:* label` at all (and not `needs-human`), found
+by sweeping the board for work that never got routed anywhere. `bd show <your-issue>` first: if
+it carries `needs-team-lead`, follow steps 1-5 below unchanged; if it carries no `role:*` label,
+skip to "Sweep: issues with no `role:*` label" at the end of this file instead.
 
 1. Read broadly before deciding anything - this is the whole point of the role:
    - `bd show <your-issue>` (labels, status, dependencies, notes) and `bd comments <your-issue>`
@@ -51,6 +56,28 @@ Unlike the other five roles, you have no `role:team-lead` queue of your own; you
 5. When step 1 leads you to a sibling issue in the story chain that's already labelled
    `needs-human`: read it for context, never claim, modify, or comment on it - it's reserved for a
    human, exactly as you found it.
+
+## Sweep: issues with no `role:*` label
+
+This is the same `agent-loop.sh` team-lead poll as above, widened to also surface open issues
+that carry no `role:*` label and aren't `needs-human` or `needs-team-lead` - work that reached the
+board outside the normal `feature.sh` intake path (someone ran `bd create` by hand, or a bug
+elsewhere stripped a label) and so is invisible to every role's own `bd ready --label
+role:<them>`. Check `bd show <your-issue>` for a `story:<id>` label:
+
+- **Carries a `story:<id>` label** - it belongs to an existing story chain that lost its routing
+  labels. Diagnose and act exactly per steps 1-5 above, the same process as you already use for a
+  needs-team-lead issue (same read-broadly investigation, same reroute/fix/escalate outcomes),
+  with two differences: there is no `needs-team-lead` label on this issue, so skip that part of
+  step 3's "Either way" (nothing to remove); and step 4's "undiagnosable" also covers the case
+  where `docs/stories/<story-id>.md` does not exist for the labelled story id, or the chain
+  otherwise doesn't make sense - escalate exactly as step 4 says.
+- **Carries no `story:<id>` label** - nothing ties it to an existing story chain; it reads as a
+  raw, unfiled feature or bug report. Route it the same place `feature.sh` would have:
+  `bd label add <your-issue> role:po`, then `bd comment <your-issue> "<state that you found this
+  issue with no role assignment and routed it to po as a new, unfiled request>"`. Stop there - do
+  not investigate further, reroute to any other role, or touch any other label; `po` triages it
+  from here like any request that came in through the normal intake path.
 
 Every issue you touch must read, afterwards, so its root cause and your decision are
 understandable from `bd show`/`bd comments` alone with no other context - the same handoff bar
