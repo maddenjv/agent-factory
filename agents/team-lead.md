@@ -101,10 +101,11 @@ nothing upstream of team-lead to triage this further.
 ## Sweep: issues with no `role:*` label
 
 This is the same `agent-loop.sh` team-lead poll as above, widened to also surface open issues
-that carry no `role:*` label and aren't `needs-human` or `needs-team-lead` - work that reached the
-board outside the normal `feature.sh` intake path (someone ran `bd create` by hand, or a bug
-elsewhere stripped a label) and so is invisible to every role's own `bd ready --label
-role:<them>`. Check `bd show <your-issue>` for a `story:<id>` label:
+that carry no `role:*` label and aren't `needs-human` or `needs-team-lead` - every new issue, both
+ones `bin/feature.sh` created (it deliberately applies no `role:*` label, so every new request
+lands here first) and ones that reached the board some other way (someone ran `bd create` by
+hand, or a bug elsewhere stripped a label) - invisible either way to every role's own `bd ready
+--label role:<them>`. Check `bd show <your-issue>` for a `story:<id>` label:
 
 - **Carries a `story:<id>` label** - it belongs to an existing story chain that lost its routing
   labels. Diagnose and act exactly per steps 1-5 above, the same process as you already use for a
@@ -114,10 +115,10 @@ role:<them>`. Check `bd show <your-issue>` for a `story:<id>` label:
   where `docs/stories/<story-id>.md` does not exist for the labelled story id, or the chain
   otherwise doesn't make sense - escalate exactly as step 4 says.
 - **Carries no `story:<id>` label** - nothing ties it to an existing story chain; it reads as a
-  raw, unfiled feature or bug report. Route it the same place `feature.sh` would have:
-  `bd label add <your-issue> role:po`, then `bd comment <your-issue> "<state that you found this
-  issue with no role assignment and routed it to po as a new, unfiled request>"`. Stop there - do
-  not investigate further, reroute to any other role, or touch any other label; `po` triages it
+  raw, unfiled feature or bug report (this is the common case for a `feature.sh` issue). Route it
+  to po: `bd label add <your-issue> role:po`, then `bd comment <your-issue> "<state that you found
+  this issue with no role assignment and routed it to po as a new, unfiled request>"`. Stop there -
+  do not investigate further, reroute to any other role, or touch any other label; `po` triages it
   from here like any request that came in through the normal intake path.
 
 Every issue you touch must read, afterwards, so its root cause and your decision are
