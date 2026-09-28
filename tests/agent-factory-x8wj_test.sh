@@ -167,12 +167,20 @@ chmod +x "$TMP/bin/bd"
 
 run_new_story() {
   rm -f "$TMP/n" "$TMP/log"
-  STUB_DIR="$TMP" PATH="$TMP/bin:$PATH" bash bin/new-story.sh smoke "smoke" >/dev/null 2>&1
+  STUB_DIR="$TMP" PATH="$TMP/bin:$PATH" bash bin/new-story.sh smoke "smoke" "$@" >/dev/null 2>&1
   LOG="$TMP/log"
   id_for() { grep '^create' "$LOG" | grep "stage:$1" | head -1 | sed 's/^create \([^|]*\)|.*/\1/'; }
   D=$(id_for design); T=$(id_for tests); I=$(id_for implement); V=$(id_for verify); R=$(id_for review)
 }
 deps_of() { grep "^dep $1 " "$LOG" | awk '{print $3}' | sort | tr '\n' ' ' | sed 's/ $//'; }
+labels_of() { grep "^create $1|" "$LOG" | head -1 | cut -d'|' -f2; }
+# Raw dep-add call count for issue $1 as the dependent. Unlike deps_of(), this doesn't go through
+# awk field-splitting, so it still catches a `bd dep add "$i" ""` call (empty depends-on target):
+# that logs a trailing-space "dep issue-X " line which deps_of's awk '{print $3}' silently reads
+# as zero deps (no third field), masking exactly the dangling-dependency-call regression AC4 guards
+# against - i.e. a stray dep-add call with nothing to depend on. Counting raw log lines instead
+# means it doesn't matter whether the (bogus) target parses to something non-empty.
+dep_calls_for() { grep -c "^dep $1 " "$LOG"; }
 sorted() { printf '%s\n' "$@" | sort | tr '\n' ' ' | sed 's/ $//'; }
 
 test_ac7_fully_complex_story_gets_the_unchanged_five_stage_chain() {
@@ -193,6 +201,100 @@ test_ac7_team_lead_prompt_names_the_full_chain_for_complex_work() {
     || fail "ac7: agents/team-lead.md doesn't say a fully complex story gets the unchanged five-stage chain"
 }
 
-for t in $(declare -F | awk '{print $3}' | grep '^test_ac'); do "$t"; done
+# ============================================================
+# AC4/AC5 - bin/new-story.sh --skip-design: no stage:design issue is created; implement carries
+# no-design and has no dangling dependency on a design issue that was never created; implement,
+# verify and review are still created and wired exactly as in the unchanged (AC7) case.
+# ============================================================
+
+test_ac4_ac5_skip_design_leaves_implement_free_of_a_dangling_dependency() {
+  run_new_story --skip-design
+  [ -z "$D" ] || { fail "ac4: --skip-design still created a stage:design issue: $D"; return; }
+  [ -n "$T" ] && [ -n "$I" ] && [ -n "$V" ] && [ -n "$R" ] \
+    || { fail "ac5: --skip-design dropped one of tests/implement/verify/review: tests=$T implement=$I verify=$V review=$R"; return; }
+  echo "$(labels_of "$I")" | grep -q 'no-design' \
+    || { fail "ac4: implement issue labels '$(labels_of "$I")' missing no-design"; return; }
+  [ "$(dep_calls_for "$I")" = 0 ] \
+    || { fail "ac4: bin/new-story.sh issued $(dep_calls_for "$I") dep-add call(s) for implement with --skip-design - expected none (even a bd dep add with an empty target is a dangling-dependency call the design issue was never created to satisfy)"; return; }
+  [ "$(deps_of "$V")" = "$(sorted "$I" "$T")" ] \
+    || { fail "ac5: verify deps='$(deps_of "$V")' expected '$(sorted "$I" "$T")' (implement AND write-tests still wired with --skip-design)"; return; }
+  [ "$(deps_of "$R")" = "$V" ] || { fail "ac5: review deps='$(deps_of "$R")' expected '$V' with --skip-design"; return; }
+  pass "ac4/ac5: --skip-design creates no design issue, leaves implement with the no-design label and no dangling dependency, and keeps implement/verify/review wired"
+}
+
+# ============================================================
+# AC3/AC5 - bin/new-story.sh --skip-tests: no stage:tests issue is created; verify carries
+# no-tests and depends on implement only (not implement+tests); implement, verify and review are
+# still created and wired.
+# ============================================================
+
+test_ac3_ac5_skip_tests_leaves_verify_depending_on_implement_only() {
+  run_new_story --skip-tests
+  [ -z "$T" ] || { fail "ac3: --skip-tests still created a stage:tests issue: $T"; return; }
+  [ -n "$D" ] && [ -n "$I" ] && [ -n "$V" ] && [ -n "$R" ] \
+    || { fail "ac5: --skip-tests dropped one of design/implement/verify/review: design=$D implement=$I verify=$V review=$R"; return; }
+  echo "$(labels_of "$V")" | grep -q 'no-tests' \
+    || { fail "ac3: verify issue labels '$(labels_of "$V")' missing no-tests"; return; }
+  [ "$(deps_of "$V")" = "$I" ] \
+    || { fail "ac3: verify deps='$(deps_of "$V")' expected '$I' only, not implement+tests, with --skip-tests"; return; }
+  [ "$(deps_of "$I")" = "$D" ] || { fail "ac5: implement deps='$(deps_of "$I")' expected '$D' with --skip-tests"; return; }
+  [ "$(deps_of "$R")" = "$V" ] || { fail "ac5: review deps='$(deps_of "$R")' expected '$V' with --skip-tests"; return; }
+  pass "ac3/ac5: --skip-tests creates no write-tests issue, leaves verify with the no-tests label depending on implement only, and keeps design/implement/verify/review wired"
+}
+
+# ============================================================
+# Both flags together - --skip-design and --skip-tests compose independently: no design, no
+# tests, implement free of deps, verify depends on implement only, implement/verify/review present.
+# ============================================================
+
+test_skip_design_and_skip_tests_compose_independently() {
+  run_new_story --skip-design --skip-tests
+  [ -z "$D" ] || { fail "both-flags: design issue created despite --skip-design: $D"; return; }
+  [ -z "$T" ] || { fail "both-flags: tests issue created despite --skip-tests: $T"; return; }
+  [ -n "$I" ] && [ -n "$V" ] && [ -n "$R" ] \
+    || { fail "both-flags: implement/verify/review dropped: implement=$I verify=$V review=$R"; return; }
+  [ "$(dep_calls_for "$I")" = 0 ] \
+    || { fail "both-flags: bin/new-story.sh issued $(dep_calls_for "$I") dep-add call(s) for implement - expected none"; return; }
+  [ "$(deps_of "$V")" = "$I" ] || { fail "both-flags: verify deps='$(deps_of "$V")' expected '$I' only"; return; }
+  [ "$(deps_of "$R")" = "$V" ] || { fail "both-flags: review deps='$(deps_of "$R")' expected '$V'"; return; }
+  pass "both-flags: --skip-design and --skip-tests compose independently - no design, no tests, implement free of deps, verify depends on implement only"
+}
+
+# ============================================================
+# AC1 - the needs-chain poll wiring: bin/agent-loop.sh's team-lead next_issue() branch must claim
+# needs-chain issues in the same select block that already claims needs-team-lead ones, or a new
+# story's chain-sizing request is never picked up.
+# ============================================================
+
+test_ac1_agent_loop_poll_wiring_includes_needs_chain() {
+  local near; near=$(grep -B3 -A1 'index("needs-chain")' bin/agent-loop.sh)
+  [ -n "$near" ] || { fail "ac1: bin/agent-loop.sh has no needs-chain clause at all - the poll wiring for AC1's mechanism is missing"; return; }
+  echo "$near" | grep -q 'select(' \
+    || { fail "ac1: needs-chain in bin/agent-loop.sh isn't inside a select(...) block: $near"; return; }
+  echo "$near" | grep -q 'needs-team-lead' \
+    || { fail "ac1: needs-chain isn't in the same select block as needs-team-lead: $near"; return; }
+  pass "ac1: bin/agent-loop.sh's team-lead next_issue() select block includes needs-chain alongside needs-team-lead"
+}
+
+# ============================================================
+# AC4/AC5 - role-prompt content: agents/engineer.md must explain no-design handling in both its
+# step 0 and its Before-closing line; agents/qa.md's stage:verify section must explain no-tests.
+# ============================================================
+
+test_ac4_ac5_role_prompts_document_no_design_and_no_tests() {
+  local eng_content; eng_content=$(cat agents/engineer.md)
+  local step0; step0=$(echo "$eng_content" | sed -n '/^0\./,/^1\./p')
+  echo "$step0" | grep -q 'no-design' \
+    || { fail "ac4: agents/engineer.md step 0 doesn't mention no-design"; return; }
+  local closing; closing=$(echo "$eng_content" | grep -i 'before closing')
+  echo "$closing" | grep -q 'no-design' \
+    || { fail "ac4: agents/engineer.md's Before-closing line doesn't mention no-design: $closing"; return; }
+  local verify_section; verify_section=$(sed -n '/^\*\*stage:verify\*\*/,/^\*\*stage:rework\*\*/p' agents/qa.md)
+  echo "$verify_section" | grep -q 'no-tests' \
+    || { fail "ac5: agents/qa.md's stage:verify section doesn't mention no-tests"; return; }
+  pass "ac4/ac5: agents/engineer.md documents no-design in step 0 and Before-closing, and agents/qa.md's stage:verify section documents no-tests"
+}
+
+for t in $(declare -F | awk '{print $3}' | grep '^test_ac\|^test_skip_design_and_skip_tests_compose_independently'); do "$t"; done
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]
