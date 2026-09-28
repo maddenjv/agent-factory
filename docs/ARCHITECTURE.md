@@ -6,12 +6,16 @@ project, coordinated through Beads (`bd`) and git. There is no application sourc
 to compile; "the code" is the `bin/*.sh` scripts, `docker-compose.yml`, the `Dockerfile` for the
 `agent` image, and the per-role prompts under `agents/`.
 
-A sixth role, `team-lead`, triages issues labelled `needs-team-lead`: `agent-loop.sh` finds its
-work via that label directly (not a `role:team-lead` label the other five use), since the whole
-point is investigating issues that may be blocked or otherwise not `bd ready`. It reroutes stuck
-work to the correct role/stage, fixes it directly, or escalates to `needs-human` - see
-`agents/team-lead.md`. It isn't part of `bin/start.sh`'s tmux layout yet (`agent-factory-uhc`) or
-given a non-default model tier yet (`agent-factory-250`); until those land, run it by hand:
+A sixth role, `team-lead`, triages two kinds of work: issues explicitly labelled
+`needs-team-lead` (a stuck piece of work another role flagged), and - since `agent-factory-m7af` -
+open issues that carry no `role:*` label at all and aren't `needs-human`/`needs-team-lead`, i.e.
+work that reached the board outside the normal `feature.sh` intake path. `agent-loop.sh` finds
+both directly via `bd list` (not a `role:team-lead` label the other five use, and not `bd ready`,
+since the whole point is investigating issues that may be blocked or otherwise not ready). It
+reroutes stuck work to the correct role/stage, fixes it directly, routes a no-story-context issue
+to `role:po`, or escalates to `needs-human` - see `agents/team-lead.md`. It isn't part of
+`bin/start.sh`'s tmux layout yet (`agent-factory-uhc`) or given a non-default model tier yet
+(`agent-factory-250`); until those land, run it by hand:
 `ROLE=team-lead docker compose -f "$KIT_DIR/docker-compose.yml" run --rm --name factory-team-lead agent`.
 
 ## Stack

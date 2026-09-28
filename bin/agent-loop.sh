@@ -68,11 +68,13 @@ is_ready()    { bd ready --limit 200 --json 2>/dev/null | jq -e --arg id "$1" '[
 
 next_issue() {
   if [ "$ROLE" = "team-lead" ]; then
-    bd list --label needs-team-lead --limit 50 --json 2>>"$LOGDIR/bd-err.log" | jq -r --arg me "$AGENT_ID" '
+    bd list --limit 200 --json 2>>"$LOGDIR/bd-err.log" | jq -r --arg me "$AGENT_ID" '
       [ .[]?
         | select(.status != "closed")
         | select(((.labels // []) | index("needs-human")) | not)
-        | select(((.assignee // "") == "") or (.assignee == $me)) ]
+        | select(((.assignee // "") == "") or (.assignee == $me))
+        | select( ((.labels // []) | index("needs-team-lead"))
+                  or (((.labels // []) | any(startswith("role:"))) | not) ) ]
       | .[0].id // empty' 2>/dev/null
     return
   fi
