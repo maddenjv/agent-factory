@@ -107,7 +107,7 @@ uses server mode, but verify on your bd version.
 | Watch an agent | its pane in the `agents` window (rendered tool calls/text; Ctrl-b o to cycle, Ctrl-b q to jump by number); raw stream in `<project>/.agent-factory/logs/<role>/*.jsonl` |
 | Review-by-exception | `needs-human` list on the board; `bd show <id>` — the agent (or agent-loop.sh itself, on an attempt-cap/failure escalation) leaves a note on the issue explaining exactly what it needs; set `NOTIFY_URL` for push alerts |
 | Unstick an issue | answer what the issue's note asked for, then `approve.sh <id> -m "<answer>"` (or plain `approve.sh <id>`) |
-| Ask team-lead to triage a stuck issue | `bd label add <id> needs-team-lead` - it has its own pane in the `agents` window and picks the issue up on its next poll. It also picks up issues with no `role:*` label, and every new story's `needs-chain` sizing request, on its own, no hand-labelling needed. |
+| Ask team-lead to triage a stuck issue | `bd label add <id> needs-team-lead` - it has its own pane in the `agents` window and picks the issue up on its next poll. It also picks up issues with no `role:*` label, and every new story's `needs-chain` sizing request, on its own, no hand-labelling needed; it also periodically judges whether po/architect should keep starting new work - see the board's `-- throttle --` line for its current call and reason. |
 | Pause / resume | `bin/stop.sh` (graceful) / `bin/stop.sh clear` then `bin/start.sh` — run from the same project directory |
 | Hard stop | `bin/stop.sh now` |
 | Restart one agent | `tmux list-panes -t factory:agents` for its index, then `tmux respawn-pane -k -t factory:agents.<index>` |
@@ -115,7 +115,11 @@ uses server mode, but verify on your bd version.
 
 ## Guardrails built in
 Per-session turn cap and wall-clock timeout; per-issue attempt cap (then `needs-human`); circuit breaker that stops
-an agent after N consecutive failed sessions and alerts; daily spend cap (`DAILY_BUDGET_USD`); WIP limit on the PO (`WIP_LIMIT`; stories stalled on a `needs-human` issue, or waiting behind one, are not counted; the limit also yields - lets the PO start another story anyway - whenever architect, engineer, qa or reviewer would otherwise have nothing ready or in-progress for their role);
+an agent after N consecutive failed sessions and alerts; daily spend cap (`DAILY_BUDGET_USD`);
+a team-lead-judged throttle on `po`/`architect` only (never `engineer`/`qa`/`reviewer`) - team-lead
+periodically weighs the engineer/qa/reviewer backlog and remaining usage/budget quota and records
+`go`/`idle` (with a reason) in `.agent-factory/control/throttle.json`; see the board's `-- throttle
+--` line for the current call (`agent-factory-q4tj`);
 STOP flags; startup preflight (bd reachable, credentials work); clean git slate every session, so unpushed work
 is discarded.
 
