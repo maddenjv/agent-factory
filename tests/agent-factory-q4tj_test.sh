@@ -141,6 +141,80 @@ test_ac7_idle_reason_is_recorded_somewhere_a_human_can_find_it() {
   pass "ac7: agents/team-lead.md requires a discoverable, stated reason whenever po/architect are idled by this policy"
 }
 
+# ============================================================
+# Mechanism tests (added during verify, once docs/design/agent-factory-q4tj.md's control-file
+# choice existed to test against - the write-tests stage above predates the design and correctly
+# stuck to content checks on agents/team-lead.md only). These pin the actual runtime behaviour of
+# bin/agent-loop.sh's throttle_ok()/throttle_age() and bin/set-throttle.sh, per the design's own
+# "Test strategy (QA)" section.
+# ============================================================
+
+SCRATCH=$(mktemp -d)
+trap 'rm -rf "$SCRATCH"' EXIT
+sed -n '/^throttle_age()/,/^throttle_stale_alert()/p' "$KIT_DIR/bin/agent-loop.sh" | sed '$d' > "$SCRATCH/throttle_funcs.sh"
+
+throttle_ok_as() {  # throttle_ok_as ROLE FIXTURE_JSON_OR_MISSING -> exit status of throttle_ok
+  local role=$1 fixture=$2
+  if [ "$fixture" = "MISSING" ]; then rm -f "$SCRATCH/throttle.json"
+  else printf '%s' "$fixture" > "$SCRATCH/throttle.json"
+  fi
+  # shellcheck disable=SC2034,SC1091  # THROTTLE_FILE/ROLE are read by the sourced functions, not this line
+  ( THROTTLE_FILE="$SCRATCH/throttle.json"; ROLE="$role"; source "$SCRATCH/throttle_funcs.sh"; throttle_ok )
+}
+
+test_ac1_ac2_throttle_ok_gates_only_po_and_architect_on_idle_true() {
+  local ok=1
+  for role in po architect; do
+    throttle_ok_as "$role" '{"idle":true,"reason":"backlog deep","assessed_at":"2026-09-28T00:00:00Z"}' \
+      && { fail "ac1/ac2: throttle_ok true for $role despite idle:true"; ok=0; }
+  done
+  for role in engineer qa reviewer team-lead; do
+    throttle_ok_as "$role" '{"idle":true,"reason":"backlog deep","assessed_at":"2026-09-28T00:00:00Z"}' \
+      || { fail "ac2: throttle_ok false for $role - only po/architect may ever be idled by this policy"; ok=0; }
+  done
+  [ "$ok" = 1 ] && pass "ac1/ac2: throttle_ok() blocks only po/architect on idle:true; engineer/qa/reviewer/team-lead always proceed"
+}
+
+test_ac1_throttle_ok_lets_po_and_architect_proceed_on_idle_false_or_missing_file() {
+  local ok=1
+  for fixture in '{"idle":false,"reason":"room","assessed_at":"2026-09-28T00:00:00Z"}' MISSING; do
+    for role in po architect; do
+      throttle_ok_as "$role" "$fixture" \
+        || { fail "ac1: throttle_ok false for $role with fixture '$fixture' - should proceed (idle:false, or fail-open on missing file)"; ok=0; }
+    done
+  done
+  [ "$ok" = 1 ] && pass "ac1: throttle_ok() lets po/architect proceed on idle:false and fails open when throttle.json is missing"
+}
+
+test_ac6_throttle_ok_reflects_latest_assessment_not_a_onetime_snapshot() {
+  throttle_ok_as po '{"idle":true,"reason":"deep","assessed_at":"2026-09-28T00:00:00Z"}' \
+    && { fail "ac6: throttle_ok true for po right after recording idle:true"; return; }
+  throttle_ok_as po '{"idle":false,"reason":"drained","assessed_at":"2026-09-28T00:05:00Z"}' \
+    || { fail "ac6: throttle_ok still false for po after the file was overwritten with idle:false - looks like a cached/one-time snapshot"; return; }
+  pass "ac6: throttle_ok() picks up an overwritten assessment on the very next call, not a one-time snapshot"
+}
+
+test_ac7_set_throttle_writes_a_discoverable_reason_and_rejects_bad_input() {
+  local out
+  ( PROJECT_DIR="$SCRATCH/proj"; DATA_DIR="$SCRATCH/proj/.agent-factory"; mkdir -p "$PROJECT_DIR"
+    export PROJECT_DIR DATA_DIR
+    "$KIT_DIR/bin/set-throttle.sh" idle "backlog too deep: 6 stories stuck at stage:implement" >/dev/null
+  )
+  local f="$SCRATCH/proj/.agent-factory/control/throttle.json"
+  [ -f "$f" ] || { fail "ac7: set-throttle.sh idle did not create throttle.json"; return; }
+  jq -e '.idle == true and (.reason | contains("backlog too deep")) and (.assessed_at | length > 0)' "$f" >/dev/null 2>&1 \
+    || { fail "ac7: throttle.json missing idle/reason/assessed_at in the expected shape: $(cat "$f")"; return; }
+  if ( PROJECT_DIR="$SCRATCH/proj"; export PROJECT_DIR; "$KIT_DIR/bin/set-throttle.sh" bogus "reason" >/dev/null 2>&1 ); then
+    fail "ac7: set-throttle.sh accepted an invalid decision ('bogus') instead of rejecting it"; return
+  fi
+  out=$(jq -r '.idle' "$f")
+  [ "$out" = "true" ] || { fail "ac7: an invalid set-throttle.sh call overwrote the previous valid assessment"; return; }
+  if ( PROJECT_DIR="$SCRATCH/proj"; export PROJECT_DIR; "$KIT_DIR/bin/set-throttle.sh" go "   " >/dev/null 2>&1 ); then
+    fail "ac7: set-throttle.sh accepted a whitespace-only reason"; return
+  fi
+  pass "ac7: set-throttle.sh records idle/reason/assessed_at in valid JSON and rejects an invalid decision or empty reason without clobbering the last assessment"
+}
+
 for t in $(declare -F | awk '{print $3}' | grep '^test_ac'); do "$t"; done
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]
