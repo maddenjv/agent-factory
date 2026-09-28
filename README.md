@@ -56,7 +56,11 @@ your logged-in Claude Code plan session — no API key or token needed by defaul
 records `HOST_USER`, `HOST_UID`, `HOST_GID` and `CONTAINER_HOME` (`/home/<host user>`) into `.env`;
 `CONTAINER_HOME` is a dependent setting used only for `docker-compose.yml`'s
 mount paths and agent-loop.sh's config sync (see docs/ARCHITECTURE.md's "Stack" section), not an
-independent way to relocate the container user's home.
+independent way to relocate the container user's home. Compose only resolves
+`${HOST_USER:-agent}`-style defaults in `docker-compose.yml` from `--env-file` (or a real host
+shell export) - `bin/lib.sh`'s `dc()` and `bin/start.sh`'s `run` commands pass `--env-file`
+pointing at the resolved `.env` for exactly this, separately from the `env_file:` key that injects
+those values into each container's own runtime environment.
 
 **Two directories, kept separate (see `bin/lib.sh`):**
 - **KIT_DIR** — this repo (`docker-compose.yml`, `bin/`, `agents/`), wherever it's checked out.
