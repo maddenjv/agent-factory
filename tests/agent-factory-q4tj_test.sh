@@ -215,6 +215,40 @@ test_ac7_set_throttle_writes_a_discoverable_reason_and_rejects_bad_input() {
   pass "ac7: set-throttle.sh records idle/reason/assessed_at in valid JSON and rejects an invalid decision or empty reason without clobbering the last assessment"
 }
 
+# run_throttle_section FIXTURE_JSON_OR_MISSING -> stdout of bin/board.sh's throttle_section(),
+# sourced fresh each call against a scratch DATA_DIR (board.sh's own sourcing guard,
+# `[[ "${BASH_SOURCE[0]}" == "${0}" ]]`, keeps the render while-loop from firing when sourced, so
+# this never hangs).
+run_throttle_section() {
+  local fixture=$1
+  mkdir -p "$SCRATCH/board/control"
+  if [ "$fixture" = "MISSING" ]; then rm -f "$SCRATCH/board/control/throttle.json"
+  else printf '%s' "$fixture" > "$SCRATCH/board/control/throttle.json"
+  fi
+  DATA_DIR="$SCRATCH/board" bash -c 'source "$0/bin/board.sh"; throttle_section' "$KIT_DIR"
+}
+
+test_ac7_board_sh_throttle_section_prints_the_recorded_reason() {
+  local out
+  out=$(run_throttle_section '{"idle":true,"reason":"backlog too deep at stage:implement","assessed_at":"2026-09-28T00:00:00Z"}')
+  echo "$out" | grep -q '^IDLE' \
+    || { fail "ac7: board.sh throttle_section didn't print IDLE for an idle:true fixture, got: $out"; return; }
+  echo "$out" | grep -qF 'backlog too deep at stage:implement' \
+    || { fail "ac7: board.sh throttle_section didn't print the recorded reason, got: $out"; return; }
+
+  out=$(run_throttle_section '{"idle":false,"reason":"plenty of room","assessed_at":"2026-09-28T00:05:00Z"}')
+  echo "$out" | grep -q '^GO' \
+    || { fail "ac7: board.sh throttle_section didn't print GO for an idle:false fixture, got: $out"; return; }
+  echo "$out" | grep -qF 'plenty of room' \
+    || { fail "ac7: board.sh throttle_section didn't print the recorded reason for the go case, got: $out"; return; }
+
+  out=$(run_throttle_section MISSING)
+  echo "$out" | grep -qi 'no assessment yet' \
+    || { fail "ac7: board.sh throttle_section didn't report the no-assessment-yet case for a missing throttle.json, got: $out"; return; }
+
+  pass "ac7: board.sh throttle_section() reads a real throttle.json and prints IDLE/GO plus the recorded reason (regression: jq 'if ... end as \$s' without parens is a jq 1.6 syntax error that silently fell through to '(unreadable: ...)' every time)"
+}
+
 for t in $(declare -F | awk '{print $3}' | grep '^test_ac'); do "$t"; done
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]

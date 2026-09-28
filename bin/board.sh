@@ -139,7 +139,7 @@ blocked_section() {
 throttle_section() {
   local f="$DATA_DIR/control/throttle.json"
   [ -f "$f" ] || { echo "(no assessment yet - po/architect proceed unthrottled)"; return; }
-  jq -r 'if .idle then "IDLE" else "GO" end as $s | "\($s)  (assessed \(.assessed_at // "?"))  \(.reason // "no reason recorded")"' "$f" 2>/dev/null \
+  jq -r '(if .idle then "IDLE" else "GO" end) as $s | "\($s)  (assessed \(.assessed_at // "?"))  \(.reason // "no reason recorded")"' "$f" 2>/dev/null \
     || echo "(unreadable: $f)"
 }
 
