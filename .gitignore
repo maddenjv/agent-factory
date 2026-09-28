@@ -9,3 +9,6 @@ data/
 .beads/proxieddb/
 *.gate.lock*
 .beads/issues.jsonl
+
+# Dotfile to add to the factory-agent image
+dotfiles/*
