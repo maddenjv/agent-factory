@@ -146,8 +146,14 @@ throttle_section() {
 render() {
   clear
   echo "== $(date -u +%FT%TZ) =="
-  echo; echo "-- throttle (po/architect) --"
-  throttle_section
+  local throttle_out
+  throttle_out=$(throttle_section)
+  if [[ "$throttle_out" == "GO  ("* || "$throttle_out" == "(no assessment yet"* ]]; then
+    :  # nothing held back, or no judgment recorded yet - AC1/AC2: stay quiet
+  else
+    echo; echo "-- throttle (po/architect) --"
+    echo "$throttle_out"  # IDLE, or the file exists but is unreadable/malformed - AC3/AC4: surface it
+  fi
   echo; echo "-- in progress --"
   bd list --json 2>/dev/null | jq -r '.[]? | select(.status=="in_progress") | "\(.id)  [\(.assignee // "-")]  \(.title)"'
   echo; echo "-- ready --"
