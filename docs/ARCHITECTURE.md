@@ -6,17 +6,20 @@ project, coordinated through Beads (`bd`) and git. There is no application sourc
 to compile; "the code" is the `bin/*.sh` scripts, `docker-compose.yml`, the `Dockerfile` for the
 `agent` image, and the per-role prompts under `agents/`.
 
-A sixth role, `team-lead`, triages two kinds of work: issues explicitly labelled
-`needs-team-lead` (a stuck piece of work another role flagged), and - since `agent-factory-m7af` -
-open issues that carry no `role:*` label at all and aren't `needs-human`/`needs-team-lead`, i.e.
-work that reached the board outside the normal `feature.sh` intake path. `agent-loop.sh` finds
-both directly via `bd list` (not a `role:team-lead` label the other five use, and not `bd ready`,
-since the whole point is investigating issues that may be blocked or otherwise not ready). It
-reroutes stuck work to the correct role/stage, fixes it directly, routes a no-story-context issue
-to `role:po`, or escalates to `needs-human` - see `agents/team-lead.md`. It isn't part of
-`bin/start.sh`'s tmux layout yet (`agent-factory-uhc`) or given a non-default model tier yet
-(`agent-factory-250`); until those land, run it by hand:
-`ROLE=team-lead docker compose -f "$KIT_DIR/docker-compose.yml" run --rm --name factory-team-lead agent`.
+A sixth role, `team-lead`, triages three kinds of work: issues explicitly labelled
+`needs-team-lead` (a stuck piece of work another role flagged); open issues that carry no
+`role:*` label at all and aren't `needs-human`/`needs-team-lead` (since `agent-factory-m7af`),
+i.e. work that reached the board outside the normal `feature.sh` intake path; and - since
+`agent-factory-x8wj` - a `needs-chain` issue po files for every new story right after writing
+`docs/stories/<id>.md`, asking team-lead to decide which of the five stages that story's chain
+actually needs (favoring inclusion whenever it's unsure) and build it with `bin/new-story.sh` -
+po itself no longer calls that script. `agent-loop.sh` finds all three directly via `bd list`
+(not a `role:team-lead` label the other five use, and not `bd ready`, since the whole point is
+investigating issues that may be blocked, unrouted, or not built yet). It reroutes stuck work to
+the correct role/stage, fixes it directly, routes a no-story-context issue to `role:po`, sizes a
+new story's chain, or escalates to `needs-human` - see `agents/team-lead.md`. It runs on the most
+capable model tier (`agent-factory-250`) and has its own pane in `bin/start.sh`'s tmux layout
+(`agent-factory-uhc`).
 
 ## Stack
 - **Orchestration**: `bash` scripts under `bin/` (`lib.sh` holds shared helpers; every other
@@ -56,8 +59,11 @@ Two directories outside this repo matter at runtime and must not be confused (se
 Two paths reach `main`, chosen by how much the work actually needs - see CLAUDE.md's "Storyless
 fix work" for the mechanics an agent follows, and `agents/reviewer.md` for how each is reviewed:
 - **Story path** (default; required whenever the work needs a new design decision or new tests):
-  `story/<story-id>` runs the full design (architect) -> tests (qa) -> implement (engineer) ->
-  verify (qa) -> review (reviewer) chain; `bin/new-story.sh` cuts the branch from `main`.
+  `story/<story-id>`, cut from `main` by po, runs design (architect) -> tests (qa) -> implement
+  (engineer) -> verify (qa) -> review (reviewer) - design and/or tests can be skipped for simple
+  work (`agent-factory-x8wj`: team-lead decides per story, favoring inclusion whenever unsure;
+  implement/verify/review are never skipped). `bin/new-story.sh` builds whichever of those stages
+  team-lead decided the story needs.
 - **Storyless fix path** (small, self-contained `discovered-from` follow-ups only - a stale doc
   line, a one-line test fix, anything already fully scoped by the issue that found it, needing no
   new design decision and no new test): a `fix/<issue-id>` branch cut directly from `main`,
