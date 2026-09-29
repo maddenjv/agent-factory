@@ -24,6 +24,11 @@ PROJECT_DIR="$toplevel"   # always the repo root, even if you ran this from a su
 
 DATA_DIR="$PROJECT_DIR/.agent-factory"
 
+# All six agent-loop.sh-driven containers (start.sh's team-lead pane plus its ROLES array) -
+# shared here so stop.sh's `now` branch and stop-watch.sh can't drift from start.sh's own list.
+# shellcheck disable=SC2034  # arrays can't be exported; consumers source lib.sh and use it directly
+FACTORY_ROLES=(po architect qa engineer reviewer team-lead)
+
 # Per-project .env, falling back to the kit-level one - never merged (see docs/design/
 # agent-factory-jqn.md). Resolved once per script invocation; nothing here creates either file.
 AGENT_ENV_FILE="$DATA_DIR/.env"

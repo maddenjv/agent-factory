@@ -8,9 +8,16 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 SESSION=${SESSION:-factory}
 case "${1:-graceful}" in
-  graceful) mkdir -p "$DATA_DIR/control"; touch "$DATA_DIR/control/STOP"; echo "STOP flag set; agents exit after their current session." ;;
+  graceful)
+    mkdir -p "$DATA_DIR/control"
+    touch "$DATA_DIR/control/STOP"
+    echo "STOP flag set; agents exit after their current session, then ops/board and the tmux session stop automatically (see $DATA_DIR/control/graceful-shutdown.log)."
+    nohup "$(dirname "${BASH_SOURCE[0]}")/stop-watch.sh" "$SESSION" \
+      >>"$DATA_DIR/control/graceful-shutdown.log" 2>&1 </dev/null &
+    disown
+    ;;
   now)
-    for r in po architect qa engineer reviewer ops board; do docker stop "factory-$r" >/dev/null 2>&1 & done; wait
+    for r in "${FACTORY_ROLES[@]}" ops board; do docker stop "factory-$r" >/dev/null 2>&1 & done; wait
     tmux kill-session -t "$SESSION" 2>/dev/null
     echo "Agents stopped. Dolt is still running (bin/lib.sh's dc, i.e. 'docker compose -f $KIT_DIR/docker-compose.yml stop dolt', to stop it)." ;;
   clear) rm -f "$DATA_DIR/control/STOP" "$DATA_DIR"/control/STOP.*; echo "STOP flags cleared." ;;
