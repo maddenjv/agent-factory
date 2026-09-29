@@ -47,6 +47,7 @@ services:
         HOST_UID: ${HOST_UID:-1000}
         HOST_GID: ${HOST_GID:-1000}
         HOST_USER: ${HOST_USER:-agent}
+        HARNESS: ${HARNESS:-claude-code}
     image: factory-agent:latest
     entrypoint: ["bash", "${KIT_DIR}/bin/agent-loop.sh"]
     working_dir: ${PROJECT_DIR}
@@ -72,6 +73,8 @@ services:
       # comment on sync_configs() for why the default can't just be changed freely.
       - ${PROJECT_DIR}/.agent-factory/claude/${ROLE:-shell}:${CONTAINER_HOME:-/home/${HOST_USER:-agent}}/.claude
       - ${HOME}/.claude:${CONTAINER_HOME:-/home/${HOST_USER:-agent}}/.claude-host:ro
+      - ${PROJECT_DIR}/.agent-factory/copilot/${ROLE:-shell}:${CONTAINER_HOME:-/home/${HOST_USER:-agent}}/.copilot
+      - ${HOME}/.copilot:${CONTAINER_HOME:-/home/${HOST_USER:-agent}}/.copilot-host:ro
       - ai-dev-kit:${CONTAINER_HOME:-/home/${HOST_USER:-agent}}/.ai-dev-kit
       - ${HOME}/.ai-dev-kit:${CONTAINER_HOME:-/home/${HOST_USER:-agent}}/.ai-dev-kit-host:ro
       - agents-home:${CONTAINER_HOME:-/home/${HOST_USER:-agent}}/.agents

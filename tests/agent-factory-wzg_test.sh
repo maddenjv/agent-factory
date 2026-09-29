@@ -30,7 +30,8 @@
 # agent-factory-2do's wait-window logic) even when it occurs during preflight - AC5 lists
 # "usage-limit" as one of the families this story's start-based expiry must NOT touch. Only the
 # other two preflight alert messages ("preflight: bd cannot reach the Beads database" and
-# "preflight: claude failed to run ...") are this story's concern.
+# "preflight: harness failed to run ...", renamed from "claude failed to run" by agent-factory-bki)
+# are this story's concern.
 #
 # Run directly: bash tests/agent-factory-wzg_test.sh
 set -uo pipefail
@@ -137,7 +138,7 @@ test_ac1_claude_failed_dropped_after_restart() {
   local ts_alert ts_start line
   ts_alert="$(now_ts '30 seconds ago')"
   ts_start="$(now_ts '10 seconds ago')"
-  line="$ts_alert [engineer] preflight: claude failed to run (check API key/token): boom"
+  line="$ts_alert [engineer] preflight: harness failed to run (check auth): boom"
   LOOP_LOGS[engineer]="$(started_line "$ts_start" engineer)"
   run_recent_alerts "$line
 "
@@ -179,7 +180,7 @@ $RESULT_OUT"
 test_ac2_kept_when_agent_has_not_restarted_since() {
   local ts_alert line
   ts_alert="$(now_ts '30 seconds ago')"
-  line="$ts_alert [engineer] preflight: claude failed to run (check API key/token): boom"
+  line="$ts_alert [engineer] preflight: harness failed to run (check auth): boom"
   # No LOOP_LOGS entry for engineer at all: no start recorded since this alert.
   run_recent_alerts "$line
 "
@@ -200,8 +201,8 @@ test_ac3_only_most_recent_of_two_preflight_alerts_shown() {
   local ts_old ts_new line_old line_new
   ts_old="$(now_ts '45 minutes ago')"   # within the default 60-minute cutoff
   ts_new="$(now_ts '5 minutes ago')"
-  line_old="$ts_old [engineer] preflight: claude failed to run (check API key/token): first failure"
-  line_new="$ts_new [engineer] preflight: claude failed to run (check API key/token): second failure"
+  line_old="$ts_old [engineer] preflight: harness failed to run (check auth): first failure"
+  line_new="$ts_new [engineer] preflight: harness failed to run (check auth): second failure"
   run_recent_alerts "$line_old
 $line_new
 "
@@ -263,7 +264,7 @@ test_ac4_restart_affects_only_that_agents_own_alerts() {
   ts_alert="$(now_ts '30 seconds ago')"
   ts_start="$(now_ts '10 seconds ago')"
   line_engineer="$ts_alert [engineer] preflight: bd cannot reach the Beads database"
-  line_qa="$ts_alert [qa] preflight: claude failed to run (check API key/token): boom"
+  line_qa="$ts_alert [qa] preflight: harness failed to run (check auth): boom"
   LOOP_LOGS[engineer]="$(started_line "$ts_start" engineer)"
   # No LOOP_LOGS entry for qa: qa has not started again.
   run_recent_alerts "$line_engineer
@@ -341,7 +342,7 @@ $RESULT_OUT"
 test_ac6_no_restart_recent_alert_still_shown() {
   local ts_alert line
   ts_alert="$(now_ts '10 minutes ago')"   # well within the default 60-minute cutoff
-  line="$ts_alert [engineer] preflight: claude failed to run (check API key/token): boom"
+  line="$ts_alert [engineer] preflight: harness failed to run (check auth): boom"
   run_recent_alerts "$line
 "
   if [ "$RESULT_RC" -ne 0 ]; then

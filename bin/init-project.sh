@@ -67,7 +67,10 @@ if [ ! -d .beads ]; then
   jq '.dolt_server_host = "127.0.0.1" | del(.dolt_server_port)' .beads/metadata.json > .beads/metadata.json.tmp \
     && mv .beads/metadata.json.tmp .beads/metadata.json
 fi
-bd setup claude >/dev/null 2>&1 || true
+case "${HARNESS:-claude-code}" in
+  copilot) bd setup copilot >/dev/null 2>&1 || true ;;
+  *) bd setup claude >/dev/null 2>&1 || true ;;
+esac
 
 # The JSONL export is noise in git when several agents work in parallel (merge conflicts),
 # and Dolt is the source of truth. Keep it out of history.
