@@ -59,7 +59,7 @@ if [ -n "$(git -C "$PROJECT_DIR" status --porcelain)" ]; then
   exit 1
 fi
 
-for r in po architect qa engineer reviewer; do
+for r in "${FACTORY_ROLES[@]}"; do
   mkdir -p "$DATA_DIR/workspaces/$r" "$DATA_DIR/claude/$r" "$DATA_DIR/copilot/$r"
 done
 mkdir -p "$DATA_DIR/dolt" "$DATA_DIR/logs" "$DATA_DIR/control"
