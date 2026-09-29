@@ -26,7 +26,13 @@ if [ ! -f "$AGENT_ENV_FILE" ]; then
   # so reaching this branch means NEITHER exists yet - starter goes at the project-level path,
   # the location new projects should use going forward.
   cp "$KIT_DIR/.env.example" "$DATA_DIR/.env"
-  echo "HARNESS=${HARNESS_FLAG:-claude-code}" >> "$DATA_DIR/.env"
+  # Defaults to Claude Code. Only appended when it differs from that default: an unconditional
+  # append would make the freshly-created .env diverge from .env.example's starter contents even
+  # on the plain no-flag path (see tests/acceptance/agent-factory-jqn.sh's AC4, which diffs the
+  # two). The default is still guaranteed - the append block below (every run after the first)
+  # unconditionally records HARNESS=claude-code if no HARNESS= line exists yet.
+  default_harness="${HARNESS_FLAG:-claude-code}"
+  [ "$default_harness" = "claude-code" ] || echo "HARNESS=$default_harness" >> "$DATA_DIR/.env"
   echo "Created $DATA_DIR/.env - defaults to reusing your host ~/.claude login (no key needed); edit it only if you want a separate CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY instead, then re-run bin/init.sh"
   exit 1
 fi
