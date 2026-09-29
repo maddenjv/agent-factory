@@ -14,12 +14,17 @@ FROM node:bookworm-slim
 ARG HOST_UID=1000
 ARG HOST_GID=1000
 ARG HOST_USER=agent
+ARG HARNESS=claude-code
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git jq curl ca-certificates shellcheck \
     && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g @anthropic-ai/claude-code
+RUN case "$HARNESS" in \
+      claude-code) npm install -g @anthropic-ai/claude-code ;; \
+      copilot) npm install -g @github/copilot ;; \
+      *) echo "error: unknown HARNESS '$HARNESS' (expected claude-code or copilot)" >&2; exit 1 ;; \
+    esac
 
 COPY --from=bd-builder /go/bin/bd /usr/local/bin/bd
 RUN ln -s bd /usr/local/bin/beads

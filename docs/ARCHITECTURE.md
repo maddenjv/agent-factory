@@ -38,13 +38,16 @@ remains, and records that judgment - with a reason - in `.agent-factory/control/
     writers).
   - `agent` - the image every role runs, built from this repo's own `Dockerfile` (Debian
     bookworm base, matching the `node:22-bookworm-slim` family already used for the Claude Code
-    CLI). Contains: `claude` (`@anthropic-ai/claude-code`, npm), `bd`/`beads`
+    CLI). Contains either `claude` (`@anthropic-ai/claude-code`, npm) or `copilot`
+    (`@github/copilot`, npm) - chosen at build time by the `HARNESS` build arg
+    (`bin/init.sh --harness=<claude-code|copilot>`, default `claude-code`; see README) - plus
+    `bd`/`beads`
     (`github.com/steveyegge/beads/cmd/bd`, go install, copied out of a throwaway builder stage),
     `git`, `jq`, `curl`, `shellcheck`, `bash`. The `Dockerfile` creates the account from the host user: name, UID and
     GID from `HOST_USER`/`HOST_UID`/`HOST_GID` build args (so files it writes into host bind mounts
     are owned by the invoking host user), home `/home/$HOST_USER`. `CONTAINER_HOME` (env var,
     auto-populated into `.env` by `bin/init.sh` as `/home/<host user>`) is a separate, dependent setting - used only as
-    the mount-path prefix for the `.claude`/`.ai-dev-kit`/`.agents` volumes in
+    the mount-path prefix for the `.claude`/`.copilot`/`.ai-dev-kit`/`.agents` volumes in
     `docker-compose.yml` and as the base path `agent-loop.sh`'s host-config sync copies into at
     startup. It is not an independent way to relocate the account's home: it must equal
     `/home/$HOST_USER`, and `agent-loop.sh` refuses to start otherwise. Compose's own
