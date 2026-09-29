@@ -8,8 +8,10 @@ to compile; "the code" is the `bin/*.sh` scripts, `docker-compose.yml`, the `Doc
 
 A sixth role, `team-lead`, triages four kinds of work: issues explicitly labelled
 `needs-team-lead` (a stuck piece of work another role flagged); open issues that carry no
-`role:*` label at all and aren't `needs-human`/`needs-team-lead` (since `agent-factory-m7af`),
-i.e. work that reached the board outside the normal `feature.sh` intake path; and - since
+`role:*` label at all and aren't `needs-human`/`needs-team-lead` (since `agent-factory-m7af`,
+widened by `agent-factory-wnju` to include every issue `bin/feature.sh` files - it applies no
+`role:*` label, so every new request is triaged here before po ever sees it), whether created by
+`feature.sh` or reaching the board some other way; and - since
 `agent-factory-x8wj` - a `needs-chain` issue po files for every new story right after writing
 `docs/stories/<id>.md`, asking team-lead to decide which of the five stages that story's chain
 actually needs (favoring inclusion whenever it's unsure) and build it with `bin/new-story.sh` -
@@ -36,16 +38,24 @@ remains, and records that judgment - with a reason - in `.agent-factory/control/
     writers).
   - `agent` - the image every role runs, built from this repo's own `Dockerfile` (Debian
     bookworm base, matching the `node:22-bookworm-slim` family already used for the Claude Code
-    CLI). Contains: `claude` (`@anthropic-ai/claude-code`, npm), `bd`/`beads`
+    CLI). Contains either `claude` (`@anthropic-ai/claude-code`, npm) or `copilot`
+    (`@github/copilot`, npm) - chosen at build time by the `HARNESS` build arg
+    (`bin/init.sh --harness=<claude-code|copilot>`, default `claude-code`; see README) - plus
+    `bd`/`beads`
     (`github.com/steveyegge/beads/cmd/bd`, go install, copied out of a throwaway builder stage),
     `git`, `jq`, `curl`, `shellcheck`, `bash`. The `Dockerfile` creates the account from the host user: name, UID and
     GID from `HOST_USER`/`HOST_UID`/`HOST_GID` build args (so files it writes into host bind mounts
     are owned by the invoking host user), home `/home/$HOST_USER`. `CONTAINER_HOME` (env var,
     auto-populated into `.env` by `bin/init.sh` as `/home/<host user>`) is a separate, dependent setting - used only as
-    the mount-path prefix for the `.claude`/`.ai-dev-kit`/`.agents` volumes in
+    the mount-path prefix for the `.claude`/`.copilot`/`.ai-dev-kit`/`.agents` volumes in
     `docker-compose.yml` and as the base path `agent-loop.sh`'s host-config sync copies into at
     startup. It is not an independent way to relocate the account's home: it must equal
-    `/home/$HOST_USER`, and `agent-loop.sh` refuses to start otherwise.
+    `/home/$HOST_USER`, and `agent-loop.sh` refuses to start otherwise. Compose's own
+    `${HOST_USER:-agent}`-style interpolation in `docker-compose.yml` (build args, mount-path
+    defaults, `dolt`'s `user:`) only sees `.env`'s values because `bin/lib.sh`'s `dc()` and
+    `bin/start.sh`'s `run` commands pass `--env-file "$AGENT_ENV_FILE"`; the `env_file:` key on
+    the `agent` service is a separate mechanism for the container's own runtime process env
+    (`docs/design/agent-factory-wpq4.md`).
 - **Tracker**: Beads (`bd`), Dolt-backed, shared across all five containers.
 
 ## Layout

@@ -1,9 +1,11 @@
 # agent-factory
 
-Five Claude Code agents (po, architect, qa, engineer, reviewer), each its own Docker container,
-coordinated through Beads and git. Agents run with `--dangerously-skip-permissions` inside their
-container. The status board and all 5 agents show as panes in one tmux window; `ops` — the shell
-you type into — is a separate window.
+Five agents (po, architect, qa, engineer, reviewer), each its own Docker container, coordinated
+through Beads and git, running on Claude Code (default) or GitHub Copilot CLI — chosen once at
+setup time with `bin/init.sh --harness=<claude-code|copilot>` (see "Setup" below). Agents run with
+full tool permissions inside their container (`--dangerously-skip-permissions` for Claude Code,
+`--allow-all-tools --no-ask-user` for GitHub Copilot CLI). The status board and all 5 agents show
+as panes in one tmux window; `ops` — the shell you type into — is a separate window.
 
 ```
                        shared Dolt server (container "dolt")  <- the only Beads database
@@ -16,7 +18,9 @@ you type into — is a separate window.
 ```
 
 ## Flow
-1. You: `feature.sh "Title" "description"` (from the **ops** window). Creates an issue labelled `role:po`.
+1. You: `feature.sh "Title" "description"` (from the **ops** window). Creates an issue with no
+   `role:*` label, so **team-lead**'s sweep triages it first - the same diagnosis it runs on any
+   unrouted issue - and labels it `role:po` once it confirms it's a new, unfiled request.
 2. **po** writes `docs/stories/<id>.md` on branch `story/<id>` and files a `needs-chain` issue asking
    **team-lead** to decide which stages the chain needs (favoring inclusion whenever it's unsure) and build
    it with `new-story.sh`. For a fully complex story this creates two issues with no dependency on each
@@ -49,14 +53,20 @@ flowchart LR
 
 ## Setup
 **Self-contained** — `docker-compose.yml` builds the `agent` image from this repo's own
-`Dockerfile` (the Claude Code + beads toolchain lives there). Its container user takes the host
+`Dockerfile` (the harness CLI - Claude Code or GitHub Copilot CLI, see "Harness" below - plus the
+beads toolchain lives there). Its container user takes the host
 user's name, UID and GID, with home `/home/<host user>`; agent-loop.sh runs in place of the image's default
-entrypoint (a plain shell), and does its own host-`~/.claude` sync on startup so each role reuses
-your logged-in Claude Code plan session — no API key or token needed by default. `bin/init.sh`
+entrypoint (a plain shell), and does its own host-`~/.claude`/`~/.copilot` sync on startup so each role reuses
+your logged-in Claude Code plan session or GitHub Copilot CLI login — no API key or token needed by
+default. `bin/init.sh`
 records `HOST_USER`, `HOST_UID`, `HOST_GID` and `CONTAINER_HOME` (`/home/<host user>`) into `.env`;
 `CONTAINER_HOME` is a dependent setting used only for `docker-compose.yml`'s
 mount paths and agent-loop.sh's config sync (see docs/ARCHITECTURE.md's "Stack" section), not an
-independent way to relocate the container user's home.
+independent way to relocate the container user's home. Compose only resolves
+`${HOST_USER:-agent}`-style defaults in `docker-compose.yml` from `--env-file` (or a real host
+shell export) - `bin/lib.sh`'s `dc()` and `bin/start.sh`'s `run` commands pass `--env-file`
+pointing at the resolved `.env` for exactly this, separately from the `env_file:` key that injects
+those values into each container's own runtime environment.
 
 **Two directories, kept separate (see `bin/lib.sh`):**
 - **KIT_DIR** — this repo (`docker-compose.yml`, `bin/`, `agents/`), wherever it's checked out.
@@ -85,10 +95,18 @@ empty to keep the tier default. Every startup logs the model actually resolved f
 
 ```bash
 cd ~/path/to/your/project    # NOT this kit's directory - this is the repo agents will work on
-/path/to/agent-factory/bin/init.sh    # first run creates <project>/.agent-factory/.env; defaults need no auth (reuses host ~/.claude); run again
+/path/to/agent-factory/bin/init.sh [--harness=claude-code|copilot]    # first run creates <project>/.agent-factory/.env; defaults need no auth (reuses host ~/.claude); run again
 /path/to/agent-factory/bin/start.sh   # tmux session "factory": window "agents" (panes: board po architect qa engineer reviewer), window "ops"
 tmux attach -t factory
 ```
+
+**Harness**: `--harness` picks which CLI every role runs on for this project - `claude-code`
+(default) or `copilot` (GitHub Copilot CLI) - recorded into `.env` the same way
+`HOST_UID`/`HOST_GID`/`HOST_USER`/`CONTAINER_HOME` are (not meant for hand-editing; re-run
+`bin/init.sh --harness=<value>` to switch later, which always rebuilds the image). One harness per
+project - no per-role mixing. Under `HARNESS=copilot`, set `COPILOT_GITHUB_TOKEN`/`GH_TOKEN`/
+`GITHUB_TOKEN` in `.env` if you haven't already run `copilot login` on the host (see `.env.example`
+and "Security notes").
 `bin/init.sh` also sets `receive.denyCurrentBranch=updateInstead` on your project so the
 reviewer's final `git push origin main` can update its checked-out files directly (standard git
 feature - it refuses loudly, not silently, if your project has uncommitted changes at that
@@ -104,7 +122,7 @@ uses server mode, but verify on your bd version.
 | Want to | Do |
 |---|---|
 | See state | `board` pane in the `agents` window; `bd ready`, `bd blocked`, `bd dep tree <id>` in the `ops` window, or `bd` directly from your own host shell in the project directory — no container needed (see Security notes) |
-| Watch an agent | its pane in the `agents` window (rendered tool calls/text; Ctrl-b o to cycle, Ctrl-b q to jump by number); raw stream in `<project>/.agent-factory/logs/<role>/*.jsonl` |
+| Watch an agent | its pane in the `agents` window (rendered tool calls/text; Ctrl-b o to cycle, Ctrl-b q to jump by number); raw stream in `<project>/.agent-factory/logs/<role>/*.jsonl` (Claude Code) or `*.log` (Copilot CLI, plain text) |
 | Review-by-exception | `needs-human` list on the board; `bd show <id>` — the agent (or agent-loop.sh itself, on an attempt-cap/failure escalation) leaves a note on the issue explaining exactly what it needs; set `NOTIFY_URL` for push alerts |
 | Unstick an issue | answer what the issue's note asked for, then `approve.sh <id> -m "<answer>"` (or plain `approve.sh <id>`) |
 | Ask team-lead to triage a stuck issue | `bd label add <id> needs-team-lead` - it has its own pane in the `agents` window and picks the issue up on its next poll. It also picks up issues with no `role:*` label, and every new story's `needs-chain` sizing request, on its own, no hand-labelling needed; it also periodically judges whether po/architect should keep starting new work - see the board's `-- throttle --` line for its current call and reason. |
@@ -115,7 +133,10 @@ uses server mode, but verify on your bd version.
 
 ## Guardrails built in
 Per-session turn cap and wall-clock timeout; per-issue attempt cap (then `needs-human`); circuit breaker that stops
-an agent after N consecutive failed sessions and alerts; daily spend cap (`DAILY_BUDGET_USD`);
+an agent after N consecutive failed sessions and alerts; daily spend cap (`DAILY_BUDGET_USD` -
+enforced for Claude Code only: Copilot CLI has no per-session USD figure to report, so sessions
+under `HARNESS=copilot` record $0 cost and `DAILY_BUDGET_USD` is not a real spend cap for them -
+use GitHub's own Copilot Premium Requests budget setting instead);
 a team-lead-judged throttle on `po`/`architect` only (never `engineer`/`qa`/`reviewer`) - team-lead
 periodically weighs the engineer/qa/reviewer backlog and remaining usage/budget quota and records
 `go`/`idle` (with a reason) in `.agent-factory/control/throttle.json`; see the board's `-- throttle
@@ -123,16 +144,21 @@ periodically weighs the engineer/qa/reviewer backlog and remaining usage/budget 
 STOP flags; startup preflight (bd reachable, credentials work); clean git slate every session, so unpushed work
 is discarded.
 
-Hitting your Claude Code plan's usage limit is treated separately from a real failure: it never counts
-against the per-issue attempt cap or the circuit breaker, at startup (preflight) or mid-issue. The agent
-parses a reset time when the CLI reports one and sleeps until then; otherwise it polls every
-`QUOTA_RETRY_INTERVAL` (default 900s) and keeps retrying the same issue indefinitely.
+Hitting your harness's usage limit (Claude Code plan limit, or GitHub Copilot's rate/quota limit) is
+treated separately from a real failure: it never counts against the per-issue attempt cap or the
+circuit breaker, at startup (preflight) or mid-issue. The agent parses a reset time when the CLI
+reports one and sleeps until then; otherwise it polls every `QUOTA_RETRY_INTERVAL` (default 900s)
+and keeps retrying the same issue indefinitely.
 
 ## Security notes
 - The container is the only thing between the agent and your machine. Nothing sensitive is mounted (no docker
   socket, `~/.ssh`, or home). Keep it that way. A `CLAUDE_CODE_OAUTH_TOKEN` shares your plan's usage limits
   across all five agents (no spend cap of its own — watch `DAILY_BUDGET_USD`); if using `ANTHROPIC_API_KEY`
-  instead, use one with a spend limit. Either way, put no other credentials in `.env`.
+  instead, use one with a spend limit. Under `HARNESS=copilot`, the equivalent is
+  `COPILOT_GITHUB_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN` (a fine-grained PAT with the "Copilot Requests"
+  permission, or an OAuth/GitHub-App token — classic `ghp_` PATs are rejected); not needed if
+  you've already run `copilot login` on the host, reused the same way `~/.claude` is. Either way,
+  put no other credentials in `.env`.
 - Containers have full outbound network access. Agents can install packages and reach the internet, which is
   useful and also the exfiltration path. If that matters, add an egress allowlist (Anthropic's reference
   devcontainer uses an iptables firewall) before running unattended on anything sensitive.
@@ -155,3 +181,14 @@ parses a reset time when the CLI reports one and sleeps until then; otherwise it
    `dep add`, `label add/remove`, `close --reason`, `list --json`. Confirm with `bd --help` on your version.
 4. Claude Code flags: `--dangerously-skip-permissions`, `--max-turns`, `--output-format stream-json --verbose`, `--model`.
 5. If `bd init` creates git hooks that break commits in the clones, `git config core.hooksPath /dev/null` in those clones.
+6. GitHub Copilot CLI (`HARNESS=copilot`) inside the built image: `-p`/`-s`/`--no-ask-user`/`--allow-all-tools`/`--model`
+   were confirmed against `copilot --help` (npm `@github/copilot`) outside the container while writing this, but not
+   run end-to-end inside a built `agent` image (no Docker where this was written) or against a live GitHub Copilot
+   account. `--max-autopilot-continues <count>` (a real continuation-count flag, confirmed to exist) is deliberately
+   NOT wired up as a `MAX_TURNS` equivalent — its own `--help`/`help billing` text says it only throttles
+   `--mode autopilot`, a different, more interactive mode than the plain `-p` invocation used here; `timeout
+   "$ITERATION_TIMEOUT"` remains the real hard stop on turn count for Copilot sessions.
+7. The exact wording of a Copilot CLI quota/rate-limit hit (`quota_hit_message`'s copilot-pattern branch in
+   `bin/agent-loop.sh`) and whether `~/.copilot` (from `copilot login`) alone is sufficient for non-interactive
+   reuse in a headless container the way `~/.claude` is, or a token env var is effectively required — confirm
+   against a live account.

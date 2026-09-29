@@ -32,12 +32,25 @@ if [ "$CONTAINER_HOME" != "$HOME" ]; then
   echo "error: CONTAINER_HOME ($CONTAINER_HOME) != image HOME ($HOME). Set HOST_USER (and CONTAINER_HOME=/home/<HOST_USER>) in .env - re-run bin/init.sh after removing a stale CONTAINER_HOME line - then rebuild: docker compose build agent" >&2
   exit 1
 fi
+HARNESS="${HARNESS:-claude-code}"
+case "$HARNESS" in
+  claude-code|copilot) ;;
+  *) echo "error: HARNESS=$HARNESS not recognized (expected claude-code or copilot) - re-run bin/init.sh --harness=<value>" >&2; exit 1 ;;
+esac
 # ---------- model resolution ----------
 # Two tiers: team-lead (coordination/triage) gets the most capable model; the five execution
 # roles get a lower-capability default. Change these two values if the mapping drifts - no other
 # call site hardcodes a model name. An explicit MODEL_<ROLE> (below) always overrides its tier.
-TIER_TEAM_LEAD="${TIER_TEAM_LEAD:-opus}"
-TIER_STANDARD="${TIER_STANDARD:-sonnet}"
+# Claude Code's tier names (sonnet/opus) aren't valid Copilot CLI model identifiers, so under
+# HARNESS=copilot the defaults are left empty unless the operator sets one - Copilot CLI then
+# falls back to its own built-in default model (see run_harness_session's --model handling).
+if [ "$HARNESS" = "copilot" ]; then
+  TIER_TEAM_LEAD="${TIER_TEAM_LEAD:-}"
+  TIER_STANDARD="${TIER_STANDARD:-}"
+else
+  TIER_TEAM_LEAD="${TIER_TEAM_LEAD:-opus}"
+  TIER_STANDARD="${TIER_STANDARD:-sonnet}"
+fi
 
 # ROLE can contain a hyphen (team-lead); "-" is not legal in a bash variable name, so sanitize
 # before building the indirect-expansion name (MODEL_TEAM_LEAD, not MODEL_TEAM-LEAD).
@@ -164,12 +177,20 @@ budget_ok()   { [ -z "$DAILY_BUDGET_USD" ] || awk -v s="$(spent_today)" -v b="$D
 # raw stderr of a single `claude` invocation can't false-positive on a file the agent chose to
 # read, since that never goes through stderr. The [^"]{0,200} cap bounds the extracted text even
 # if grep's match runs long for some other reason - never dump an unbounded blob into a tmux pane.
-quota_hit_message() {  # quota_hit_message FILE -> first matching line (bounded, single-line), or empty
-  grep -ihEo 'hit your [a-z]+ limit[^"]{0,200}|usage limit[^"]{0,200}|limit reached[^"]{0,200}|rate limit exceeded[^"]{0,200}' "$@" 2>/dev/null \
+quota_hit_message() {  # quota_hit_message FILE... -> first matching line (bounded, single-line), or empty
+  local pattern
+  if [ "$HARNESS" = "copilot" ]; then
+    pattern='quota_exceeded|you have no quota[^"]{0,200}|exceeded your [a-z]+ rate limit[^"]{0,200}|reached the rate limit[^"]{0,200}'
+  else
+    pattern='hit your [a-z]+ limit[^"]{0,200}|usage limit[^"]{0,200}|limit reached[^"]{0,200}|rate limit exceeded[^"]{0,200}'
+  fi
+  grep -ihEo "$pattern" "$@" 2>/dev/null \
     | head -1 | tr -d '\r' | tr '\n\t' '  ' | cut -c1-200
 }
 
-quota_hit_from_stream() {  # quota_hit_from_stream FILE -> limit message if the run ENDED in an error result, or empty
+quota_hit_from_stream() {  # Claude Code only (stream-json's structured result event has no Copilot
+                           # equivalent - see run_harness_session, which never calls this for copilot).
+                           # quota_hit_from_stream FILE -> limit message if the run ENDED in an error result, or empty
   # The CLI reports a session limit only on stdout: a synthetic assistant message carrying the
   # text, then a result event with is_error:true. Only "hit your ... limit" wording is accepted.
   jq -Rn '[inputs | fromjson? | select(type=="object")] as $e
@@ -233,27 +254,37 @@ build_throttle_prompt() {
   printf '\n\n---\nNo bd issue this session: assess the po/architect throttle now (see "Assess the po/architect throttle" above), then record it with bin/set-throttle.sh - that is the only place this decision is recorded, so do not skip it.\nRepository: %s (your own clone; remote "origin"). Shared conventions are in CLAUDE.md. KIT_DIR=%s PROJECT_DIR=%s\n' "$REPO" "$KIT_DIR" "$PROJECT_DIR"
 }
 
-run_claude_session() {  # run_claude_session LOGNAME PROMPT -> sets LAST_RUN_QUOTA_MSG (empty
+run_harness_session() {  # run_harness_session LOGNAME PROMPT -> sets LAST_RUN_QUOTA_MSG (empty
                          # unless this run hit a usage limit); shared by run_agent() (one bd issue)
                          # and run_throttle_assessment() (no bd issue).
   local logname=$1 prompt=$2 logfile errfile outfile cost
-  logfile="$LOGDIR/$(date +%F).$logname.jsonl"
   errfile=$(mktemp); outfile=$(mktemp)
-  local args=(-p "$prompt" --dangerously-skip-permissions --max-turns "$MAX_TURNS"
-              --output-format stream-json --verbose)
-  [ -n "$MODEL" ] && args+=(--model "$MODEL")
-  ( cd "$REPO" && timeout "$ITERATION_TIMEOUT" claude "${args[@]}" 2>"$errfile" ) \
-    | tee -a "$logfile" "$outfile" | jq -R -r --unbuffered "$RENDER" 2>/dev/null
-  cost=$(jq -rs '[.[] | select(.type=="result")] | last | .total_cost_usd // 0' "$logfile" 2>/dev/null)
+  if [ "$HARNESS" = "copilot" ]; then
+    logfile="$LOGDIR/$(date +%F).$logname.log"   # plain text, not stream-json - see README
+    local args=(-p "$prompt" --allow-all-tools --no-ask-user -s)
+    [ -n "$MODEL" ] && args+=(--model "$MODEL")
+    ( cd "$REPO" && timeout "$ITERATION_TIMEOUT" copilot "${args[@]}" 2>"$errfile" ) \
+      | tee -a "$logfile" "$outfile"
+    cost=0   # Copilot CLI reports no per-session USD figure - see README "Guardrails built in"
+    LAST_RUN_QUOTA_MSG=$(quota_hit_message "$errfile")
+  else
+    logfile="$LOGDIR/$(date +%F).$logname.jsonl"
+    local args=(-p "$prompt" --dangerously-skip-permissions --max-turns "$MAX_TURNS"
+                --output-format stream-json --verbose)
+    [ -n "$MODEL" ] && args+=(--model "$MODEL")
+    ( cd "$REPO" && timeout "$ITERATION_TIMEOUT" claude "${args[@]}" 2>"$errfile" ) \
+      | tee -a "$logfile" "$outfile" | jq -R -r --unbuffered "$RENDER" 2>/dev/null
+    cost=$(jq -rs '[.[] | select(.type=="result")] | last | .total_cost_usd // 0' "$logfile" 2>/dev/null)
+    LAST_RUN_QUOTA_MSG=$(quota_hit_message "$errfile")   # stderr, else this run's final error result
+    [ -n "$LAST_RUN_QUOTA_MSG" ] || LAST_RUN_QUOTA_MSG=$(quota_hit_from_stream "$outfile")
+  fi
   echo "${cost:-0}" >> "$CONTROL/cost/$ROLE.$(date +%F)"
   cat "$errfile" >> "$LOGDIR/claude-err.log"
-  LAST_RUN_QUOTA_MSG=$(quota_hit_message "$errfile")   # stderr, else this run's final error result
-  [ -n "$LAST_RUN_QUOTA_MSG" ] || LAST_RUN_QUOTA_MSG=$(quota_hit_from_stream "$outfile")
   rm -f "$errfile" "$outfile"
 }
 
-run_agent() { run_claude_session "$1" "$(build_prompt "$1")"; }               # sets LAST_RUN_QUOTA_MSG
-run_throttle_assessment() { run_claude_session throttle "$(build_throttle_prompt)"; }  # sets LAST_RUN_QUOTA_MSG
+run_agent() { run_harness_session "$1" "$(build_prompt "$1")"; }               # sets LAST_RUN_QUOTA_MSG
+run_throttle_assessment() { run_harness_session throttle "$(build_throttle_prompt)"; }  # sets LAST_RUN_QUOTA_MSG
 
 # ---------- outcome handling ----------
 is_conflict_rework() { has_label "$1" stage:rework && has_label "$1" merge-conflict; }
@@ -331,6 +362,7 @@ sync_configs() {
   (
     flock -w 120 9 || { log "sync lock timed out; skipping host-config sync"; return 1; }
     sync_dir "$CONTAINER_HOME/.claude-host" "${CLAUDE_CONFIG_DIR:-$CONTAINER_HOME/.claude}" "~/.claude"
+    sync_dir "$CONTAINER_HOME/.copilot-host" "$CONTAINER_HOME/.copilot" "~/.copilot"
     sync_dir "$CONTAINER_HOME/.ai-dev-kit-host" "$CONTAINER_HOME/.ai-dev-kit" "~/.ai-dev-kit"
     sync_dir "$CONTAINER_HOME/.agents-host" "$CONTAINER_HOME/.agents" "~/.agents"
   ) 9>"$CONTROL/sync.lock"
@@ -347,7 +379,11 @@ cd "$REPO" || exit 3
 if [ "$PREFLIGHT" = 1 ]; then
   bd ready --json >/dev/null 2>&1 || { alert "preflight: bd cannot reach the Beads database"; exit 3; }
   while :; do
-    preflight_out=$(timeout 180 claude -p "Reply with the single word OK." --dangerously-skip-permissions --max-turns 1 2>&1)
+    if [ "$HARNESS" = "copilot" ]; then
+      preflight_out=$(timeout 180 copilot -p "Reply with the single word OK." --allow-all-tools --no-ask-user -s 2>&1)
+    else
+      preflight_out=$(timeout 180 claude -p "Reply with the single word OK." --dangerously-skip-permissions --max-turns 1 2>&1)
+    fi
     [ $? -eq 0 ] && break
     preflight_hit=$(quota_hit_message <(printf '%s' "$preflight_out"))
     if [ -n "$preflight_hit" ]; then
@@ -356,13 +392,13 @@ if [ "$PREFLIGHT" = 1 ]; then
       sleep "$wait_s"
       continue
     fi
-    alert "preflight: claude failed to run (check API key/token): ${preflight_out:0:200}"
+    alert "preflight: harness failed to run (check auth): ${preflight_out:0:200}"
     exit 3
   done
 fi
 
 release_stale
-log "started: role=$ROLE model=$MODEL max_turns=$MAX_TURNS timeout=$ITERATION_TIMEOUT"
+log "started: role=$ROLE harness=$HARNESS model=${MODEL:-<harness default>} max_turns=$MAX_TURNS timeout=$ITERATION_TIMEOUT"
 
 # ---------- main loop ----------
 fails=0

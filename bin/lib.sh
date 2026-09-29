@@ -24,6 +24,11 @@ PROJECT_DIR="$toplevel"   # always the repo root, even if you ran this from a su
 
 DATA_DIR="$PROJECT_DIR/.agent-factory"
 
+# All six agent-loop.sh-driven containers (start.sh's team-lead pane plus its ROLES array) -
+# shared here so stop.sh's `now` branch and stop-watch.sh can't drift from start.sh's own list.
+# shellcheck disable=SC2034  # arrays can't be exported; consumers source lib.sh and use it directly
+FACTORY_ROLES=(po architect qa engineer reviewer team-lead)
+
 # Per-project .env, falling back to the kit-level one - never merged (see docs/design/
 # agent-factory-jqn.md). Resolved once per script invocation; nothing here creates either file.
 AGENT_ENV_FILE="$DATA_DIR/.env"
@@ -32,5 +37,10 @@ AGENT_ENV_FILE="$DATA_DIR/.env"
 export KIT_DIR PROJECT_DIR DATA_DIR AGENT_ENV_FILE
 
 dc() {  # dc <docker compose args...> - always targets the kit's compose file, from PROJECT_DIR
-  docker compose -f "$KIT_DIR/docker-compose.yml" "$@"
+  # --env-file feeds AGENT_ENV_FILE's HOST_UID/HOST_GID/HOST_USER/CONTAINER_HOME (and everything
+  # else in it) into Compose's own ${VAR:-default} interpolation in docker-compose.yml - build
+  # args, mount-path defaults, dolt's `user:`. Separate from the env_file: key on the agent
+  # service, which only injects vars into the container's *runtime* process after the image is
+  # already built (see docs/design/agent-factory-wpq4.md).
+  docker compose -f "$KIT_DIR/docker-compose.yml" --env-file "$AGENT_ENV_FILE" "$@"
 }

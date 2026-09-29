@@ -35,7 +35,7 @@ agent_last_started_epoch() {
 # dropped once older than ALERT_MAX_AGE_MINUTES (default 60). Lines that don't match the log
 # format or have an unparseable timestamp are printed unchanged.
 #
-# Preflight alerts (the "bd cannot reach" and "claude failed to run" messages specifically - NOT
+# Preflight alerts (the "bd cannot reach" and "harness failed to run" messages specifically - NOT
 # "usage limit hit", which stays governed purely by the wait-window logic below, per
 # agent-factory-wzg AC5) get one more pre-check first: an agent's own preflight alert is dropped
 # once superseded - either by a later preflight alert of its own (two alerts from the same agent
@@ -44,7 +44,7 @@ agent_last_started_epoch() {
 # over the tail window: whether an early line is superseded can depend on a later line the
 # forward filtering pass hasn't reached yet (agent-factory-wzg AC3).
 #
-# "bd cannot reach" / "claude failed to run" always exit agent-loop.sh immediately, so ANY later
+# "bd cannot reach" / "harness failed to run" always exit agent-loop.sh immediately, so ANY later
 # alert line for that same agent - including a "usage limit hit" preflight retry, which loops/
 # sleeps within its own process rather than exiting - is by construction proof that a later
 # process has since started for that agent. The first pass below therefore also counts
@@ -65,7 +65,7 @@ recent_alerts() {
   while IFS= read -r line; do
     [[ $line =~ ^([0-9T:-]+Z)\ \[([^]]*)\]\ (.*)$ ]] || continue
     ts="${BASH_REMATCH[1]}"; agent="${BASH_REMATCH[2]}"; msg="${BASH_REMATCH[3]}"
-    [[ $msg =~ ^preflight:\ (bd\ cannot\ reach|claude\ failed\ to\ run|usage\ limit\ hit) ]] || continue
+    [[ $msg =~ ^preflight:\ (bd\ cannot\ reach|harness\ failed\ to\ run|usage\ limit\ hit) ]] || continue
     pf_epoch=$(date -d "$ts" +%s 2>/dev/null) || continue
     if [ -z "${restart_epoch[$agent]:-}" ] || (( pf_epoch > restart_epoch[$agent] )); then
       restart_epoch[$agent]=$pf_epoch
@@ -83,7 +83,7 @@ recent_alerts() {
     fi
     ts="${BASH_REMATCH[1]}"; agent="${BASH_REMATCH[2]}"; msg="${BASH_REMATCH[3]}"
 
-    if [[ $msg =~ ^preflight:\ (bd\ cannot\ reach|claude\ failed\ to\ run) ]]; then
+    if [[ $msg =~ ^preflight:\ (bd\ cannot\ reach|harness\ failed\ to\ run) ]]; then
       alert_epoch=$(date -d "$ts" +%s 2>/dev/null) && [ -n "${restart_epoch[$agent]:-}" ] \
         && (( alert_epoch < restart_epoch[$agent] )) && continue
     fi
@@ -146,8 +146,14 @@ throttle_section() {
 render() {
   clear
   echo "== $(date -u +%FT%TZ) =="
-  echo; echo "-- throttle (po/architect) --"
-  throttle_section
+  local throttle_out
+  throttle_out=$(throttle_section)
+  if [[ "$throttle_out" == "GO  ("* || "$throttle_out" == "(no assessment yet"* ]]; then
+    :  # nothing held back, or no judgment recorded yet - AC1/AC2: stay quiet
+  else
+    echo; echo "-- throttle (po/architect) --"
+    echo "$throttle_out"  # IDLE, or the file exists but is unreadable/malformed - AC3/AC4: surface it
+  fi
   echo; echo "-- in progress --"
   bd list --json 2>/dev/null | jq -r '.[]? | select(.status=="in_progress") | "\(.id)  [\(.assignee // "-")]  \(.title)"'
   echo; echo "-- ready --"

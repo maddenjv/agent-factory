@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Usage: feature.sh "Title" ["description"] [--priority <priority>]   - file a feature request for
-# the product-owner agent. priority is any of Beads' accepted forms (0-4 or P0-P4); default 2.
+# Usage: feature.sh "Title" ["description"] [--priority <priority>]   - file a feature request.
+# Carries no role:* label, so team-lead's sweep triages it (same as any other unrouted issue)
+# before it reaches po. priority is any of Beads' accepted forms (0-4 or P0-P4); default 2.
 set -euo pipefail
 usage="usage: feature.sh \"title\" [\"description\"] [--priority <priority>]"
 title=${1:?$usage}
@@ -23,5 +24,5 @@ if ! [[ $priority =~ ^[Pp]?[0-4]$ ]]; then
   exit 1
 fi
 
-bd create "$title" -t feature -p "$priority" -l role:po -d "$description" --json \
+bd create "$title" -t feature -p "$priority" -d "$description" --json \
   | jq -r 'if type=="array" then .[0].id else .id end'
