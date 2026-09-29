@@ -80,16 +80,23 @@ issue_field() { show_json "$1" | jq -r --arg f "$2" '.[$f] // empty' 2>/dev/null
 has_label()   { show_json "$1" | jq -e --arg l "$2" '(.labels // []) | index($l)' >/dev/null 2>&1; }
 is_ready()    { bd ready --limit 200 --json 2>/dev/null | jq -e --arg id "$1" '[.[]? | select(.id == $id)] | length > 0' >/dev/null 2>&1; }
 
+# A build role that escalates with needs-team-lead leaves its own claim on the issue; team-lead
+# treats an assignee matching a build-role identity that is also the issue's own role:<x> label
+# (AGENT_ID may carry a suffix, e.g. engineer-2) as that stale claim. Any other assignee is left alone.
+BUILD_ROLE_RE='^(po|architect|engineer|qa|reviewer)([-_.].*)?$'
+
 next_issue() {
   if [ "$ROLE" = "team-lead" ]; then
-    bd list --limit 200 --json 2>>"$LOGDIR/bd-err.log" | jq -r --arg me "$AGENT_ID" '
+    bd list --limit 200 --json 2>>"$LOGDIR/bd-err.log" | jq -r --arg me "$AGENT_ID" --arg re "$BUILD_ROLE_RE" '
+      def stale_escalator: (.assignee // "") as $a | ($a | test($re)) and ([(.labels // [])[] | select(startswith("role:")) | .[5:]] | any(. as $r | $a == $r or ($a | startswith($r + "-") or startswith($r + "_") or startswith($r + "."))));
       [ .[]?
         | select(.status != "closed")
         | select(((.labels // []) | index("needs-human")) | not)
-        | select(((.assignee // "") == "") or (.assignee == $me))
-        | select( ((.labels // []) | index("needs-team-lead"))
-                  or (((.labels // []) | any(startswith("role:"))) | not)
-                  or ((.labels // []) | index("needs-chain")) ) ]
+        | select( (((.labels // []) | index("needs-team-lead"))
+                   and (((.assignee // "") == "") or (.assignee == $me) or stale_escalator))
+                  or ( ((((.labels // []) | any(startswith("role:"))) | not)
+                        or ((.labels // []) | index("needs-chain")))
+                       and (((.assignee // "") == "") or (.assignee == $me)) ) ) ]
       | .[0].id // empty' 2>/dev/null
     return
   fi
@@ -105,6 +112,10 @@ claim() {  # atomic claim when unassigned; resume if it was already ours
   who=$(issue_field "$id" assignee)
   if [ -z "$who" ]; then bd update "$id" --claim --assignee "$AGENT_ID" >/dev/null 2>&1
   elif [ "$who" = "$AGENT_ID" ]; then bd update "$id" --status in_progress >/dev/null 2>&1
+  elif [ "$ROLE" = team-lead ] && [[ "$who" =~ $BUILD_ROLE_RE ]] && has_label "$id" needs-team-lead \
+       && show_json "$id" | jq -e --arg a "$who" '[(.labels // [])[] | select(startswith("role:")) | .[5:]] | any(. as $r | $a == $r or ($a | test("^" + $r + "[-_.]")))' >/dev/null 2>&1; then
+    # take over the escalating role's stale claim (compare-and-swap; --force overrides its live claim)
+    bd update "$id" --if-assignee "$who" --assignee "$AGENT_ID" --status in_progress --force >/dev/null 2>&1
   else return 1; fi
 }
 
@@ -315,6 +326,10 @@ handle_outcome() {  # 0 = the agent did something legitimate with the issue, 1 =
   done
   if [ "$st" = "open" ] && ! is_ready "$id"; then log "$id parked behind new blockers (rework/handoff)"; return 0; fi
   if [ "$ROLE" = "team-lead" ] && ! has_label "$id" needs-team-lead; then
+    # hand the issue back to the role it was rerouted to: our claim would hide it from its queue
+    if show_json "$id" | jq -e --arg me "$AGENT_ID" '.assignee == $me and ((.labels // []) | any(startswith("role:")))' >/dev/null 2>&1; then
+      bd update "$id" --if-assignee "$AGENT_ID" --assignee "" --status open >/dev/null 2>&1
+    fi
     log "$id triaged (needs-team-lead cleared)"; return 0
   fi
   return 1
