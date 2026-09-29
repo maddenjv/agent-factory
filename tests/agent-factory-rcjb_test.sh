@@ -103,6 +103,21 @@ test_ac6_rerouted_issue_picked_up_by_role_queue() {
   pass "ac6: rerouted issue is picked by its role queue; still-escalated one is not"
 }
 
+test_edge_suffixed_escalator_id_selected_but_lookalike_and_mismatched_role_not() {
+  local got
+  got=$(issue e1 in_progress engineer-2 "needs-team-lead,role:engineer" | run_next_issue team-lead)
+  [ "$got" = e1 ] || { fail "edge: stale claim by suffixed id engineer-2 not selected - got '$got'"; return; }
+  got=$(issue e2 in_progress engineerx "needs-team-lead,role:engineer" | run_next_issue team-lead)
+  [ -z "$got" ] || { fail "edge: lookalike assignee 'engineerx' treated as stale claim - got '$got'"; return; }
+  got=$(issue e3 in_progress qa "needs-team-lead,role:engineer" | run_next_issue team-lead)
+  [ -z "$got" ] || { fail "edge: build role qa (not the escalating role:engineer) was overridden - got '$got'"; return; }
+  got=$(issue e4 in_progress po "needs-team-lead,needs-human,role:po" | run_next_issue team-lead)
+  [ -z "$got" ] || { fail "edge: needs-human + stale claim selected - got '$got'"; return; }
+  got=$(issue e5 closed po "needs-team-lead,role:po" | run_next_issue team-lead)
+  [ -z "$got" ] || { fail "edge: closed issue selected - got '$got'"; return; }
+  pass "edge: suffixed escalator selected; lookalike, wrong-role, needs-human and closed are not"
+}
+
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do "$t"; done
 echo "--- $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
