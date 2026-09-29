@@ -291,10 +291,168 @@ test_ac6_clear_only_removes_stop_flags() {
 }
 
 # ============================================================
-# AC1: once every role agent has exited after a graceful stop, ops and board are also stopped and
-# the tmux session no longer exists, with no further manual commands. Needs real docker + tmux -
-# no fake can stand in for "something notices the containers exited" without assuming a mechanism
-# this story hasn't designed yet.
+# AC1, direct + via stop.sh graceful, with fakes: the real-docker/real-tmux AC1 test below SKIPs
+# whenever docker/tmux aren't installed (true in this environment, and plausibly true in CI) -
+# leaving stop-watch.sh's actual polling/teardown logic, and stop.sh graceful's nohup+disown launch
+# of it, completely unexercised whenever that happens. docker/tmux are just commands on PATH as far
+# as stop-watch.sh/stop.sh are concerned, so a fake docker that answers `ps -q -f name=...` from
+# state files (in addition to logging `stop` calls, like install_fakes' docker already does) lets
+# these two run for real - real polling loop, real background/detach - without needing a real
+# daemon or a real terminal session, on every machine. Added at verify (qa's own edge-case
+# coverage), same technique the design doc's own test-strategy bullets 3/4 called for.
+# ============================================================
+install_fake_docker_ps() {  # install_fake_docker_ps <bindir> - `ps -q -f name=^factory-X$` reads
+                             # $DOCKER_PS_STATE/factory-X (present = running); `stop`/anything else
+                             # logs to $DOCKER_FAKE_LOG, same convention as install_fakes' docker.
+  local dir=$1
+  cat > "$dir/docker" <<'FAKE_DOCKER_PS'
+#!/usr/bin/env bash
+if [ "${1:-}" = "ps" ]; then
+  for a in "$@"; do
+    case "$a" in
+      'name=^factory-'*'$')
+        role="${a#name=^factory-}"; role="${role%\$}"
+        [ -f "$DOCKER_PS_STATE/factory-$role" ] && echo "fakeid-$role"
+        ;;
+    esac
+  done
+  exit 0
+fi
+{ args=("$@"); (IFS=$'\t'; echo "${args[*]}"); } >> "${DOCKER_FAKE_LOG:-/dev/null}"
+exit 0
+FAKE_DOCKER_PS
+  chmod +x "$dir/docker"
+}
+
+install_fake_tmux() {  # same fake tmux install_fakes writes, factored out so it can be combined
+                        # with install_fake_docker_ps instead of install_fakes' own plain docker.
+  local dir=$1
+  cat > "$dir/tmux" <<'FAKE_TMUX'
+#!/usr/bin/env bash
+{ args=("$@"); (IFS=$'\t'; echo "${args[*]}"); } >> "$TMUX_FAKE_LOG"
+case "${1:-}" in
+  has-session)   [ -f "$TMUX_FAKE_STATE/exists" ] && exit 0 || exit 1 ;;
+  new-session)   mkdir -p "$TMUX_FAKE_STATE"; touch "$TMUX_FAKE_STATE/exists" ;;
+  kill-session)  rm -f "$TMUX_FAKE_STATE/exists" ;;
+esac
+exit 0
+FAKE_TMUX
+  chmod +x "$dir/tmux"
+}
+
+ALL_ROLES_FOR_WATCH=(po architect qa engineer reviewer team-lead)
+
+test_ac1_stopwatch_direct_waits_then_tears_down() {
+  local fakebin ps_state tmux_log tmux_state docker_log session watch_pid waited status stopped expected r
+  fakebin=$(mktemp -d); cleanup_dirs+=("$fakebin")
+  install_fake_docker_ps "$fakebin"; install_fake_tmux "$fakebin"
+  ps_state=$(mktemp -d); cleanup_dirs+=("$ps_state")
+  for r in "${ALL_ROLES_FOR_WATCH[@]}"; do touch "$ps_state/factory-$r"; done   # all six "running"
+  tmux_log=$(mktemp); cleanup_dirs+=("$tmux_log")
+  tmux_state=$(mktemp -d); cleanup_dirs+=("$tmux_state")
+  docker_log=$(mktemp); cleanup_dirs+=("$docker_log")
+  session="rez8-ac1direct-$$-$RANDOM"
+
+  PATH="$fakebin:$PATH" DOCKER_PS_STATE="$ps_state" DOCKER_FAKE_LOG="$docker_log" \
+    TMUX_FAKE_LOG="$tmux_log" TMUX_FAKE_STATE="$tmux_state" STOP_WATCH_POLL_INTERVAL=1 \
+    PROJECT_DIR="$KIT_DIR" bash "$KIT_DIR/bin/stop-watch.sh" "$session" >/dev/null 2>&1 &
+  watch_pid=$!
+  cleanup_cmds+=("kill $watch_pid 2>/dev/null")
+
+  sleep 2   # ~2 poll intervals; all six roles still "running" - watcher must not tear down yet
+  if [ -s "$docker_log" ] || grep -q '^kill-session' "$tmux_log" 2>/dev/null; then
+    fail "ac1(direct): stop-watch.sh stopped ops/board/tmux while role containers were still running"
+    kill "$watch_pid" 2>/dev/null || true
+    return
+  fi
+
+  rm -f "$ps_state"/factory-*   # simulate every role agent exiting on its own
+
+  waited=0
+  while kill -0 "$watch_pid" 2>/dev/null && [ "$waited" -lt 10 ]; do sleep 1; waited=$((waited + 1)); done
+  if kill -0 "$watch_pid" 2>/dev/null; then
+    fail "ac1(direct): stop-watch.sh had not exited ${waited}s after all six role containers exited"
+    kill "$watch_pid" 2>/dev/null || true
+    return
+  fi
+  wait "$watch_pid"; status=$?
+
+  stopped=$(grep -E '^stop\b' "$docker_log" | tr '\t' '\n' | grep -v '^stop$' | sort -u)
+  expected=$(printf '%s\n' factory-ops factory-board | sort)
+  if [ "$stopped" != "$expected" ]; then
+    fail "ac1(direct): stop-watch.sh's 'docker stop' calls were [$(tr '\n' ' ' <<<"$stopped")], expected exactly {factory-ops,factory-board}"
+    return
+  fi
+  if ! grep -qE "^kill-session\s.*$session" "$tmux_log"; then
+    fail "ac1(direct): stop-watch.sh never issued tmux kill-session for '$session'; log: $(cat "$tmux_log")"
+    return
+  fi
+  if [ "$status" -ne 0 ]; then
+    fail "ac1(direct): stop-watch.sh exited $status, expected 0"
+    return
+  fi
+  pass "ac1(direct): stop-watch.sh polls until all six FACTORY_ROLES containers are gone, then stops ops/board and kills the tmux session"
+}
+
+test_ac1_graceful_launches_working_detached_watcher() {
+  local proj fakebin ps_state tmux_log tmux_state docker_log session status start_t end_t elapsed waited
+  proj=$(make_tmpproject)
+  fakebin=$(mktemp -d); cleanup_dirs+=("$fakebin")
+  install_fake_docker_ps "$fakebin"; install_fake_tmux "$fakebin"
+  ps_state=$(mktemp -d); cleanup_dirs+=("$ps_state")   # empty: all six roles already "not running"
+  tmux_log=$(mktemp); cleanup_dirs+=("$tmux_log")
+  tmux_state=$(mktemp -d); cleanup_dirs+=("$tmux_state")
+  docker_log=$(mktemp); cleanup_dirs+=("$docker_log")
+  session="rez8-ac1graceful-$$-$RANDOM"
+  TMP_OUT=$(mktemp); cleanup_dirs+=("$TMP_OUT")
+
+  start_t=$(date +%s)
+  PATH="$fakebin:$PATH" DOCKER_PS_STATE="$ps_state" DOCKER_FAKE_LOG="$docker_log" \
+    TMUX_FAKE_LOG="$tmux_log" TMUX_FAKE_STATE="$tmux_state" STOP_WATCH_POLL_INTERVAL=1 \
+    SESSION="$session" PROJECT_DIR="$proj" bash "$KIT_DIR/bin/stop.sh" graceful > "$TMP_OUT" 2>&1
+  status=$?
+  end_t=$(date +%s)
+  elapsed=$((end_t - start_t))
+  cleanup_cmds+=("pkill -f 'stop-watch.sh $session' 2>/dev/null")
+
+  if [ "$status" -ne 0 ]; then
+    fail "ac1(graceful): bin/stop.sh graceful exited $status; output: $(cat "$TMP_OUT")"
+    return
+  fi
+  if [ "$elapsed" -gt 3 ]; then
+    fail "ac1(graceful): bin/stop.sh graceful took ${elapsed}s to return - it must launch the watcher detached and return immediately, not block on it"
+    return
+  fi
+  if [ ! -f "$proj/.agent-factory/control/STOP" ]; then
+    fail "ac1(graceful): STOP flag was not set immediately"
+    return
+  fi
+
+  waited=0
+  while [ "$waited" -lt 10 ]; do
+    grep -qE "^kill-session\s.*$session" "$tmux_log" 2>/dev/null \
+      && [ -f "$proj/.agent-factory/control/graceful-shutdown.log" ] \
+      && grep -q "graceful shutdown complete" "$proj/.agent-factory/control/graceful-shutdown.log" 2>/dev/null \
+      && break
+    sleep 1; waited=$((waited + 1))
+  done
+  if ! grep -qE "^kill-session\s.*$session" "$tmux_log" 2>/dev/null; then
+    fail "ac1(graceful): tmux kill-session for '$session' never appeared within ${waited}s - stop.sh graceful did not launch a working detached watcher"
+    return
+  fi
+  if ! grep -q "graceful shutdown complete" "$proj/.agent-factory/control/graceful-shutdown.log" 2>/dev/null; then
+    fail "ac1(graceful): $proj/.agent-factory/control/graceful-shutdown.log never recorded the teardown-complete line"
+    return
+  fi
+  pass "ac1(graceful): stop.sh graceful returns immediately after launching a detached watcher that later stops ops/board and kills the tmux session, with the trail logged to graceful-shutdown.log"
+}
+
+# ============================================================
+# AC1, real docker + real tmux: once every role agent has exited after a graceful stop, ops and
+# board are also stopped and the tmux session no longer exists, with no further manual commands.
+# Complements the fake-based tests above with an end-to-end run against the real binaries whenever
+# they're available (SKIPs otherwise, e.g. this environment - see the two tests above for coverage
+# that doesn't depend on that).
 # ============================================================
 ROLE_CONTAINERS=(po architect qa engineer reviewer team-lead)
 ALL_CONTAINERS=(po architect qa engineer reviewer team-lead ops board)
@@ -369,16 +527,18 @@ test_shellcheck_touched_scripts() {
     skip "shellcheck: not installed in this environment"
     return
   fi
-  if (cd bin && shellcheck -x stop.sh start.sh); then
-    pass "shellcheck: bin/stop.sh, bin/start.sh clean"
+  if (cd bin && shellcheck -x stop.sh start.sh stop-watch.sh lib.sh); then
+    pass "shellcheck: bin/stop.sh, bin/start.sh, bin/stop-watch.sh, bin/lib.sh clean"
   else
-    fail "shellcheck: findings in bin/stop.sh and/or bin/start.sh"
+    fail "shellcheck: findings in bin/stop.sh, bin/start.sh, bin/stop-watch.sh and/or bin/lib.sh"
   fi
 }
 
 TMP_OUT=$(mktemp); cleanup_dirs+=("$TMP_OUT")
 TMP_OUT2=$(mktemp); cleanup_dirs+=("$TMP_OUT2")
 
+test_ac1_stopwatch_direct_waits_then_tears_down
+test_ac1_graceful_launches_working_detached_watcher
 test_ac1_graceful_teardown_of_ops_board_and_session_once_agents_exit
 test_ac2_start_clears_stop_and_launches_all_six_roles
 test_ac3_already_running_short_circuits_unchanged
