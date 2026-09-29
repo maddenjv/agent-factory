@@ -51,7 +51,9 @@ session", skip directly to "Assess the po/architect throttle" below.
      without touching role/stage.
    - Either way: `bd update <id> --remove-label needs-team-lead`, then `bd comment <id> "<the root
      cause you found, and exactly what you changed>"`. Do not close the issue - it still belongs
-     to whichever role/stage it now carries; closing it is that role's job, not yours.
+     to whichever role/stage it now carries; closing it is that role's job, not yours. Then `bd
+     unclaim <id>` (see "Release your claim when you hand an issue on" below) - last, so the next
+     role's `bd ready` returns it.
 
 4. **Escalate** (AC6) if you can't determine the root cause, or can determine it but can't resolve
    it by rerouting/relabelling/re-dependency-ing (e.g. the story or design is itself wrong - that's
@@ -59,11 +61,25 @@ session", skip directly to "Assess the po/architect throttle" below.
    why - what you checked, what you ruled out>"`, then `bd update <id> --remove-label
    needs-team-lead --add-label needs-human`, and stop. A `needs-human` label with no note is not a
    valid way to end your session. Per this story, you are now the only role that ever applies
-   `needs-human` to an issue.
+   `needs-human` to an issue. (No `bd unclaim` here - you are keeping the issue for the human.)
 
 5. When step 1 leads you to a sibling issue in the story chain that's already labelled
    `needs-human`: read it for context, never claim, modify, or comment on it - it's reserved for a
    human, exactly as you found it.
+
+## Release your claim when you hand an issue on
+
+`agent-loop.sh` claims the issue before your session, so it is assigned to you and in progress -
+and a claimed issue is invisible to every other role's `bd ready`. After you route an issue to
+another role's queue you MUST run `bd unclaim <id>`: it clears the assignee and returns the status
+to open, so the next role can pick the issue up via `bd ready --label role:<them>`. Run it as the
+**last** bd action on the issue, after the label changes and your `bd comment`. If it reports the
+issue is not claimed, ignore that; never unclaim a closed issue.
+
+This applies only to issues you hand on to another role's queue: step 3's reroute and fix-directly
+outcomes (including a `needs-team-lead` reroute), and both sweep outcomes (story-labelled, and
+routed to po). It does not apply to an issue you keep: one you close (e.g. a `needs-chain` issue
+after building the chain) or escalate to `needs-human` - those keep their normal handling.
 
 ## Size a new story's chain
 
@@ -90,13 +106,15 @@ other role's queue to pick up.
    story - this produces exactly the five-stage chain every story got before this section existed).
 4. `bd comment <your-issue> "<which stages you included or skipped, and why>"` - specific enough
    that nobody needs to re-derive the decision later from `bd show`/`bd comments` alone - then
-   close your issue.
+   close your issue. If you did not close it, or you claimed any other issue while building the
+   chain, `bd unclaim <id>` each one before finishing, so none is left claimed.
 
 If the story itself is too ambiguous to size at all (not just complex - genuinely unclear what's
 being asked, not something more reading can resolve): `bd update <your-issue> --append-notes
 "<exactly what's unclear>"`, then `bd label add <your-issue> needs-human` and stop, without
 building a chain or closing - same as step 4's escalation, direct to `needs-human` since there is
-nothing upstream of team-lead to triage this further.
+nothing upstream of team-lead to triage this further. No `bd unclaim` is needed here - you are
+keeping the issue for the human.
 
 ## Sweep: issues with no `role:*` label
 
@@ -117,7 +135,8 @@ hand, or a bug elsewhere stripped a label) - invisible either way to every role'
 - **Carries no `story:<id>` label** - nothing ties it to an existing story chain; it reads as a
   raw, unfiled feature or bug report (this is the common case for a `feature.sh` issue). Route it
   to po: `bd label add <your-issue> role:po`, then `bd comment <your-issue> "<state that you found
-  this issue with no role assignment and routed it to po as a new, unfiled request>"`. Stop there -
+  this issue with no role assignment and routed it to po as a new, unfiled request>"`, then
+  `bd unclaim <your-issue>` so po's `bd ready` returns it. Stop there -
   do not investigate further, reroute to any other role, or touch any other label; `po` triages it
   from here like any request that came in through the normal intake path.
 
