@@ -16,7 +16,9 @@ you type into — is a separate window.
 ```
 
 ## Flow
-1. You: `feature.sh "Title" "description"` (from the **ops** window). Creates an issue labelled `role:po`.
+1. You: `feature.sh "Title" "description"` (from the **ops** window). Creates an issue with no
+   `role:*` label, so **team-lead**'s sweep triages it first - the same diagnosis it runs on any
+   unrouted issue - and labels it `role:po` once it confirms it's a new, unfiled request.
 2. **po** writes `docs/stories/<id>.md` on branch `story/<id>` and files a `needs-chain` issue asking
    **team-lead** to decide which stages the chain needs (favoring inclusion whenever it's unsure) and build
    it with `new-story.sh`. For a fully complex story this creates two issues with no dependency on each

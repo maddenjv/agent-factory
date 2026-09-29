@@ -8,8 +8,10 @@ to compile; "the code" is the `bin/*.sh` scripts, `docker-compose.yml`, the `Doc
 
 A sixth role, `team-lead`, triages four kinds of work: issues explicitly labelled
 `needs-team-lead` (a stuck piece of work another role flagged); open issues that carry no
-`role:*` label at all and aren't `needs-human`/`needs-team-lead` (since `agent-factory-m7af`),
-i.e. work that reached the board outside the normal `feature.sh` intake path; and - since
+`role:*` label at all and aren't `needs-human`/`needs-team-lead` (since `agent-factory-m7af`,
+widened by `agent-factory-wnju` to include every issue `bin/feature.sh` files - it applies no
+`role:*` label, so every new request is triaged here before po ever sees it), whether created by
+`feature.sh` or reaching the board some other way; and - since
 `agent-factory-x8wj` - a `needs-chain` issue po files for every new story right after writing
 `docs/stories/<id>.md`, asking team-lead to decide which of the five stages that story's chain
 actually needs (favoring inclusion whenever it's unsure) and build it with `bin/new-story.sh` -
