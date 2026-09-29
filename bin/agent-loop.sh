@@ -362,6 +362,7 @@ sync_configs() {
   (
     flock -w 120 9 || { log "sync lock timed out; skipping host-config sync"; return 1; }
     sync_dir "$CONTAINER_HOME/.claude-host" "${CLAUDE_CONFIG_DIR:-$CONTAINER_HOME/.claude}" "~/.claude"
+    sync_dir "$CONTAINER_HOME/.copilot-host" "$CONTAINER_HOME/.copilot" "~/.copilot"
     sync_dir "$CONTAINER_HOME/.ai-dev-kit-host" "$CONTAINER_HOME/.ai-dev-kit" "~/.ai-dev-kit"
     sync_dir "$CONTAINER_HOME/.agents-host" "$CONTAINER_HOME/.agents" "~/.agents"
   ) 9>"$CONTROL/sync.lock"
