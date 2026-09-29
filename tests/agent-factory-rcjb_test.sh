@@ -24,7 +24,11 @@ sed -n '/^log()/,/^sync_dir()/{/^sync_dir()/d; p}' bin/agent-loop.sh > "$FNS"
 mkdir -p "$TMP/bin"
 cat > "$TMP/bin/bd" <<'STUB'
 #!/usr/bin/env bash
-case "$1" in list|ready) cat "$FIXTURE";; esac
+case "$1" in
+  list|ready) cat "$FIXTURE";;
+  show) jq -c --arg id "$2" '.[] | select(.id == $id)' "$FIXTURE";;
+  update) echo "$*" >> "$BDLOG";;
+esac
 exit 0
 STUB
 chmod +x "$TMP/bin/bd"
@@ -40,6 +44,78 @@ run_next_issue() {  # run_next_issue ROLE < fixture-issues (one JSON object per 
   jq -s . > "$fixture"
   FIXTURE="$fixture" PATH="$TMP/bin:$PATH" AGENT_ID="$role" ROLE="$role" LOGDIR="$w" \
     bash -c 'source "$1"; next_issue' _ "$FNS"
+}
+
+# run_fn ROLE FUNCTION ID < fixture-issues: runs claim()/handle_outcome() against the stub;
+# prints "rc=N" then every `bd update` call it made.
+run_fn() {
+  local role=$1 fn=$2 id=$3 fixture="$TMP/f.$RANDOM.json" w="$TMP/log.$RANDOM"; mkdir -p "$w"
+  jq -s . > "$fixture"
+  local bdlog="$w/bd.log"; : > "$bdlog"
+  FIXTURE="$fixture" BDLOG="$bdlog" PATH="$TMP/bin:$PATH" AGENT_ID="$role" ROLE="$role" LOGDIR="$w" \
+    CONTROL="$w" STATE="$w" bash -c 'source "$1"; '"$fn"' "$2"; echo "rc=$?"' _ "$FNS" "$id" 2>/dev/null
+  cat "$bdlog"
+}
+no_update() { ! grep -q 'update' <<<"$1"; }
+
+test_claim_team_lead_takes_over_stale_escalator_claim() {
+  local out
+  out=$(issue c1 in_progress po "needs-team-lead,role:po" | run_fn team-lead claim c1)
+  grep -q '^rc=0$' <<<"$out" || { fail "claim: takeover of po's stale claim returned non-zero: $out"; return; }
+  grep -q -- '--if-assignee po' <<<"$out" && grep -q -- '--assignee team-lead' <<<"$out" \
+    && grep -q -- '--force' <<<"$out" \
+    || { fail "claim: expected bd update --if-assignee po --assignee team-lead --force - got: $out"; return; }
+  pass "claim: team-lead takes over the escalating role's claim via compare-and-swap with --force"
+}
+
+test_claim_team_lead_does_not_steal_other_agents_issue() {
+  local out
+  out=$(issue c2 in_progress alice "needs-team-lead,role:po" | run_fn team-lead claim c2)
+  { grep -q '^rc=1$' <<<"$out" && no_update "$out"; } \
+    || { fail "claim: alice's issue should give rc=1 and no bd update - got: $out"; return; }
+  out=$(issue c3 in_progress qa "needs-team-lead,role:engineer" | run_fn team-lead claim c3)
+  { grep -q '^rc=1$' <<<"$out" && no_update "$out"; } \
+    || { fail "claim: mismatched role (qa vs role:engineer) should give rc=1, no update - got: $out"; return; }
+  out=$(issue c4 in_progress po "role:po" | run_fn team-lead claim c4)
+  { grep -q '^rc=1$' <<<"$out" && no_update "$out"; } \
+    || { fail "claim: po's issue without needs-team-lead should not be taken over - got: $out"; return; }
+  pass "claim: non-escalator assignee, mismatched role, or missing needs-team-lead is not taken over"
+}
+
+test_claim_non_team_lead_role_never_takes_over() {
+  local out r
+  for r in po engineer qa; do
+    out=$(issue c5 in_progress alice "needs-team-lead,role:$r" | run_fn $r claim c5)
+    { grep -q '^rc=1$' <<<"$out" && no_update "$out"; } \
+      || { fail "claim: $r took over alice's issue - got: $out"; return; }
+  done
+  out=$(issue c6 in_progress po "needs-team-lead,role:po" | run_fn engineer claim c6)
+  { grep -q '^rc=1$' <<<"$out" && no_update "$out"; } \
+    || { fail "claim: engineer took over po's stale claim - got: $out"; return; }
+  pass "claim: only team-lead can take over a stale claim"
+}
+
+test_handle_outcome_team_lead_releases_rerouted_issue() {
+  local out
+  out=$(issue h1 in_progress team-lead "role:engineer,stage:rework" | run_fn team-lead handle_outcome h1)
+  grep -q -- '--if-assignee team-lead' <<<"$out" && grep -q -- '--assignee  *--status open' <<<"$out" \
+    && grep -q '^rc=0$' <<<"$out" \
+    || { fail "handle_outcome: expected release (assignee cleared, status open) rc=0 - got: $out"; return; }
+  pass "handle_outcome: team-lead releases a rerouted issue (needs-team-lead cleared, role:* present)"
+}
+
+test_handle_outcome_no_release_when_still_escalated_or_not_ours() {
+  local out
+  out=$(issue h2 in_progress team-lead "needs-team-lead,role:engineer" | run_fn team-lead handle_outcome h2)
+  ! grep -q -- '--assignee' <<<"$out" \
+    || { fail "handle_outcome: released issue still labelled needs-team-lead - got: $out"; return; }
+  out=$(issue h3 in_progress engineer "role:engineer" | run_fn team-lead handle_outcome h3)
+  ! grep -q -- '--assignee' <<<"$out" \
+    || { fail "handle_outcome: cleared assignee that is not team-lead - got: $out"; return; }
+  out=$(issue h4 in_progress team-lead "stage:design" | run_fn team-lead handle_outcome h4)
+  ! grep -q -- '--assignee' <<<"$out" \
+    || { fail "handle_outcome: released issue with no role:* label - got: $out"; return; }
+  pass "handle_outcome: no release while still escalated, when assignee isn't team-lead, or without role:*"
 }
 
 test_ac1_unassigned_needs_team_lead_with_role_label_is_selected() {
