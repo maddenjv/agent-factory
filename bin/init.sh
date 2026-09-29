@@ -4,6 +4,20 @@
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
+# --harness=<claude-code|copilot> selects which harness CLI every role runs on. Validated here,
+# before anything below touches the filesystem, so a bad value never creates so much as $DATA_DIR.
+HARNESS_FLAG=""
+for arg in "$@"; do
+  case "$arg" in
+    --harness=*) HARNESS_FLAG="${arg#--harness=}" ;;
+    *) echo "error: unrecognized argument: $arg (expected --harness=claude-code or --harness=copilot)" >&2; exit 1 ;;
+  esac
+done
+case "$HARNESS_FLAG" in
+  ""|claude-code|copilot) ;;
+  *) echo "error: --harness must be 'claude-code' or 'copilot' (got '$HARNESS_FLAG')" >&2; exit 1 ;;
+esac
+
 chmod +x "$KIT_DIR"/bin/*.sh
 
 mkdir -p "$DATA_DIR"   # moved up: AGENT_ENV_FILE's project-level candidate must exist to test for
@@ -12,6 +26,7 @@ if [ ! -f "$AGENT_ENV_FILE" ]; then
   # so reaching this branch means NEITHER exists yet - starter goes at the project-level path,
   # the location new projects should use going forward.
   cp "$KIT_DIR/.env.example" "$DATA_DIR/.env"
+  echo "HARNESS=${HARNESS_FLAG:-claude-code}" >> "$DATA_DIR/.env"
   echo "Created $DATA_DIR/.env - defaults to reusing your host ~/.claude login (no key needed); edit it only if you want a separate CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY instead, then re-run bin/init.sh"
   exit 1
 fi
@@ -19,6 +34,15 @@ grep -q '^HOST_UID=' "$AGENT_ENV_FILE" || echo "HOST_UID=$(id -u)" >> "$AGENT_EN
 grep -q '^HOST_GID=' "$AGENT_ENV_FILE" || echo "HOST_GID=$(id -g)" >> "$AGENT_ENV_FILE"
 grep -q '^HOST_USER=' "$AGENT_ENV_FILE" || echo "HOST_USER=$(id -un)" >> "$AGENT_ENV_FILE"
 grep -q '^CONTAINER_HOME=' "$AGENT_ENV_FILE" || echo "CONTAINER_HOME=/home/$(id -un)" >> "$AGENT_ENV_FILE"
+if [ -n "$HARNESS_FLAG" ]; then
+  if grep -q '^HARNESS=' "$AGENT_ENV_FILE"; then
+    sed -i "s/^HARNESS=.*/HARNESS=$HARNESS_FLAG/" "$AGENT_ENV_FILE"
+  else
+    echo "HARNESS=$HARNESS_FLAG" >> "$AGENT_ENV_FILE"
+  fi
+else
+  grep -q '^HARNESS=' "$AGENT_ENV_FILE" || echo "HARNESS=claude-code" >> "$AGENT_ENV_FILE"
+fi
 
 # Checked here, before anything below creates .agent-factory/ (which would otherwise make this
 # repo look "dirty" to the same check). bin/init-project.sh commits scaffolding directly to main
@@ -30,7 +54,7 @@ if [ -n "$(git -C "$PROJECT_DIR" status --porcelain)" ]; then
 fi
 
 for r in po architect qa engineer reviewer; do
-  mkdir -p "$DATA_DIR/workspaces/$r" "$DATA_DIR/claude/$r"
+  mkdir -p "$DATA_DIR/workspaces/$r" "$DATA_DIR/claude/$r" "$DATA_DIR/copilot/$r"
 done
 mkdir -p "$DATA_DIR/dolt" "$DATA_DIR/logs" "$DATA_DIR/control"
 
