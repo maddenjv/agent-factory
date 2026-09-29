@@ -17,7 +17,10 @@ widened by `agent-factory-wnju` to include every issue `bin/feature.sh` files - 
 actually needs (favoring inclusion whenever it's unsure) and build it with `bin/new-story.sh` -
 po itself no longer calls that script. `agent-loop.sh` finds all three directly via `bd list`
 (not a `role:team-lead` label the other five use, and not `bd ready`, since the whole point is
-investigating issues that may be blocked, unrouted, or not built yet). It reroutes stuck work to
+investigating issues that may be blocked, unrouted, or not built yet). `needs-team-lead` issues
+are picked up even while still claimed by the escalating build role (`agent-factory-rcjb`: an assignee matching the issue's own `role:*` label -
+its stale claim - is taken over; any other assignee is respected), and team-lead releases the claim
+when it reroutes to a role. It reroutes stuck work to
 the correct role/stage, fixes it directly, routes a no-story-context issue to `role:po`, sizes a
 new story's chain, or escalates to `needs-human` - see `agents/team-lead.md`. It runs on the most
 capable model tier (`agent-factory-250`) and has its own pane in `bin/start.sh`'s tmux layout
