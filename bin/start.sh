@@ -47,6 +47,7 @@ tmux set-option -w -t "$SESSION:ops" remain-on-exit on
 tmux set-option -w -t "$SESSION:ops" pane-border-status top
 tmux set-option -w -t "$SESSION:ops" pane-border-format "#{pane_title}"
 
+tmux select-pane -t "$SESSION:ops" -D   # board is above the shell; focus the shell
 tmux select-window -t "$SESSION:ops"   # land where you type, as before
 echo "Started. Attach with: tmux attach -t $SESSION"
 echo "Project: $PROJECT_DIR"
