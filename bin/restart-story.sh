@@ -7,7 +7,10 @@ set -euo pipefail
 rid=${1:?usage: restart-story.sh <rework-issue-id> <unresolvable|attempt-cap>}
 reason=${2:?usage: restart-story.sh <rework-issue-id> <unresolvable|attempt-cap>}
 
-j() { jq -c 'if type=="array" then .[0] else . end'; }
+# shellcheck disable=SC1091
+source "$(dirname "${BASH_SOURCE[0]}")/bdjson.sh"
+
+j() { bd_unwrap | jq -c 'if type=="array" then .[0] else . end'; }
 rj=$(bd show "$rid" --json | j)
 haslabel() { jq -e --arg l "$2" '(.labels // []) | index($l)' <<<"$1" >/dev/null; }
 
@@ -18,7 +21,7 @@ sid=$(jq -r '[.labels[] | select(startswith("story:"))][0] // empty | sub("^stor
 [ -n "$sid" ] || { echo "error: $rid has no story: label" >&2; exit 1; }
 rnotes=$(jq -r '.notes // "none"' <<<"$rj")
 
-all=$(bd list --all --label "story:$sid" --json --limit 0)
+all=$(bd list --all --label "story:$sid" --json --limit 0 | bd_unwrap)
 ids_of() {  # jq filter on issue -> ids
   jq -r "[.[]? | select($1) | .id] | join(\" \")" <<<"$all"
 }
@@ -44,7 +47,7 @@ title=$(jq -r '[.[]? | select((.labels // []) | index("stage:review"))][0].title
 
 mk() {  # role stage description
   bd create "$title [$2]" -t task -p 2 -l "role:$1,stage:$2,story:$sid,restarted" -d "$3" --json \
-    | jq -r 'if type=="array" then .[0].id else .id end'
+    | bd_unwrap | jq -r 'if type=="array" then .[0].id else .id end'
 }
 ctx="Story: docs/stories/$sid.md. Branch: story/$sid. Conventions: CLAUDE.md."
 i=$(mk engineer implement "PLACEHOLDER")

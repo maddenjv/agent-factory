@@ -11,6 +11,8 @@
 # team-lead after it decides the chain (agents/team-lead.md's "Size a new story's chain"), not by
 # po directly - see agents/po.md step 6.
 set -euo pipefail
+# shellcheck disable=SC1091
+source "$(dirname "${BASH_SOURCE[0]}")/bdjson.sh"
 sid=${1:?usage: new-story.sh <story-id> "<title>" [--skip-design] [--skip-tests]}
 title=${2:?usage: new-story.sh <story-id> "<title>" [--skip-design] [--skip-tests]}
 shift 2
@@ -26,7 +28,7 @@ gate=""; [ "$skip_design" = 0 ] && [ "${HUMAN_APPROVE_STORIES:-0}" = 1 ] && gate
 
 mk() {  # role stage suffix-labels description
   bd create "$sid: $title [$2]" -t task -p 2 -l "role:$1,stage:$2,story:$sid$3" -d "$4" --json \
-    | jq -r 'if type=="array" then .[0].id else .id end'
+    | bd_unwrap | jq -r 'if type=="array" then .[0].id else .id end'
 }
 ctx="Story: docs/stories/$sid.md. Branch: story/$sid. Conventions: CLAUDE.md."
 
