@@ -98,6 +98,9 @@ fix work" for the mechanics an agent follows, and `agents/reviewer.md` for how e
   `KIT_DIR` - see README "Setup".
 - Docker image changes: prefer boring, pinned-where-it-matters base images over cleverness. The
   `agent` image is rebuilt with `docker compose build agent`; there is no registry push step.
+- **bd `--json` output**: bd v2.0 wraps it as `{"data": ..., "schema_version": N}` (early opt-in
+  `BD_JSON_ENVELOPE=1`); today it is bare. Every script that parses it sources `bin/bdjson.sh` and pipes
+  `bd ... --json` through `bd_unwrap` first (identity on bare output) - see `docs/design/agent-factory-3emn.md`.
 - Errors inside `agent-loop.sh` are handled by the loop itself (attempt caps, circuit breaker,
   `needs-team-lead` escalation with a note for the five build roles, `needs-human` for team-lead's
   own escalations) rather than by scripts crashing silently - see README "Guardrails built in".
