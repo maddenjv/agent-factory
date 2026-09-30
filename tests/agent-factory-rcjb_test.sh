@@ -21,6 +21,7 @@ fail() { FAIL=$((FAIL + 1)); echo "FAIL: $1"; }
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 FNS="$TMP/fns.sh"
 sed -n '/^log()/,/^sync_dir()/{/^sync_dir()/d; p}' bin/agent-loop.sh > "$FNS"
+cat bin/bdjson.sh >> "$FNS"  # bd_unwrap: agent-loop.sh sources it outside the extracted range
 mkdir -p "$TMP/bin"
 cat > "$TMP/bin/bd" <<'STUB'
 #!/usr/bin/env bash

@@ -64,6 +64,8 @@ fi
 mkdir -p "$LOGDIR" "$STATE" "$CONTROL/cost"
 # shellcheck disable=SC1091
 source "$KIT_DIR/bin/env.sh"
+# shellcheck disable=SC1091
+source "$KIT_DIR/bin/bdjson.sh"
 
 # ---------- logging / alerting ----------
 log() { printf '%s [%s] %s\n' "$(date -u +%FT%TZ)" "$AGENT_ID" "$*" | tee -a "$LOGDIR/loop.log"; }
@@ -75,10 +77,10 @@ alert() {
 stopping() { [ -f "$CONTROL/STOP" ] || [ -f "$CONTROL/STOP.$ROLE" ]; }
 
 # ---------- beads helpers ----------
-show_json()   { bd show "$1" --json 2>/dev/null | jq -c 'if type=="array" then .[0] else . end' 2>/dev/null; }
+show_json()   { bd show "$1" --json 2>/dev/null | bd_unwrap | jq -c 'if type=="array" then .[0] else . end' 2>/dev/null; }
 issue_field() { show_json "$1" | jq -r --arg f "$2" '.[$f] // empty' 2>/dev/null; }
 has_label()   { show_json "$1" | jq -e --arg l "$2" '(.labels // []) | index($l)' >/dev/null 2>&1; }
-is_ready()    { bd ready --limit 200 --json 2>/dev/null | jq -e --arg id "$1" '[.[]? | select(.id == $id)] | length > 0' >/dev/null 2>&1; }
+is_ready()    { bd ready --limit 200 --json 2>/dev/null | bd_unwrap | jq -e --arg id "$1" '[.[]? | select(.id == $id)] | length > 0' >/dev/null 2>&1; }
 
 # A build role that escalates with needs-team-lead leaves its own claim on the issue; team-lead
 # treats an assignee matching a build-role identity that is also the issue's own role:<x> label
@@ -87,7 +89,7 @@ BUILD_ROLE_RE='^(po|architect|engineer|qa|reviewer)([-_.].*)?$'
 
 next_issue() {
   if [ "$ROLE" = "team-lead" ]; then
-    bd list --limit 200 --json 2>>"$LOGDIR/bd-err.log" | jq -r --arg me "$AGENT_ID" --arg re "$BUILD_ROLE_RE" '
+    bd list --limit 200 --json 2>>"$LOGDIR/bd-err.log" | bd_unwrap | jq -r --arg me "$AGENT_ID" --arg re "$BUILD_ROLE_RE" '
       def stale_escalator: (.assignee // "") as $a | ($a | test($re)) and ([(.labels // [])[] | select(startswith("role:")) | .[5:]] | any(. as $r | $a == $r or ($a | startswith($r + "-") or startswith($r + "_") or startswith($r + "."))));
       [ .[]?
         | select(.status != "closed")
@@ -100,7 +102,7 @@ next_issue() {
       | .[0].id // empty' 2>/dev/null
     return
   fi
-  bd ready --label "role:$ROLE" --limit 50 --json 2>>"$LOGDIR/bd-err.log" | jq -r --arg me "$AGENT_ID" '
+  bd ready --label "role:$ROLE" --limit 50 --json 2>>"$LOGDIR/bd-err.log" | bd_unwrap | jq -r --arg me "$AGENT_ID" '
     [ .[]?
       | select(((.labels // []) | (index("needs-human") != null or index("needs-team-lead") != null)) | not)
       | select(((.assignee // "") == "") or (.assignee == $me)) ]
@@ -121,6 +123,7 @@ claim() {  # atomic claim when unassigned; resume if it was already ours
 
 release_stale() {  # anything still in_progress under our name at startup is left over from a crash
   bd list --json 2>/dev/null \
+    | bd_unwrap \
     | jq -r --arg me "$AGENT_ID" '.[]? | select(.status=="in_progress" and (.assignee // "")==$me) | .id' \
     | while read -r id; do
         [ -n "$id" ] || continue

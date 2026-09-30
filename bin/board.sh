@@ -2,13 +2,15 @@
 # Live status board for the tmux "board" window.
 # shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
+# shellcheck disable=SC1091
+source "$(dirname "${BASH_SOURCE[0]}")/bdjson.sh"
 
 # still_needs_human ID -> exit 0 (still labelled, not closed - keep showing) / 1 (resolved - drop).
 # Any lookup ambiguity (bd unreachable, id typo'd, issue deleted) fails open: keep showing the
 # alert rather than risk silently dropping one that's still real.
 still_needs_human() {
   local id="$1" json status
-  json=$(bd show "$id" --json 2>/dev/null | jq -c 'if type=="array" then .[0] else . end' 2>/dev/null)
+  json=$(bd show "$id" --json 2>/dev/null | bd_unwrap | jq -c 'if type=="array" then .[0] else . end' 2>/dev/null)
   [ -n "$json" ] || return 0
   status=$(echo "$json" | jq -r '.status // empty')
   [ "$status" = "closed" ] && return 1
@@ -120,17 +122,19 @@ alert_line_visible() {
 
 ready_section() {
   bd ready --limit 50 --json 2>/dev/null \
+    | bd_unwrap \
     | jq -r '.[]? | select((.labels // []) | index("needs-human") | not)
                   | "\(.id)  \((.labels // []) | join(","))  \(.title)"'
 }
 
 needs_human_section() {
   bd list --json 2>/dev/null \
+    | bd_unwrap \
     | jq -r '.[]? | select(.status!="closed" and ((.labels // []) | index("needs-human"))) | "\(.id)  \(.title)"'
 }
 
 blocked_section() {
-  bd list --json 2>/dev/null | jq -r '
+  bd list --json 2>/dev/null | bd_unwrap | jq -r '
     ( [.[] | select(.status != "closed")] ) as $open
     | ($open | map({key: .id, value: (.labels // [])}) | from_entries) as $labels
     | ($open | map({key: .id, value: .status}) | from_entries) as $status
@@ -167,7 +171,7 @@ render() {
     echo "$throttle_out"  # IDLE, or the file exists but is unreadable/malformed - AC3/AC4: surface it
   fi
   echo; echo "-- in progress --"
-  bd list --json 2>/dev/null | jq -r '.[]? | select(.status=="in_progress") | "\(.id)  [\(.assignee // "-")]  \(.title)"'
+  bd list --json 2>/dev/null | bd_unwrap | jq -r '.[]? | select(.status=="in_progress") | "\(.id)  [\(.assignee // "-")]  \(.title)"'
   echo; echo "-- ready --"
   ready_section
   echo; echo "-- needs-human (see \`bd show <id>\` for what's needed) --"
