@@ -35,6 +35,7 @@ reviewer has now found a defect serious enough to need one after all - create it
 if it didn't exist), commit, push `story/<story-id>-design`. This always requires
 re-implementation, so before closing:
 1. `bd create "Re-implement per corrected design/<story-id>.md: <summary of change>" -t task -p 2 -l role:engineer,stage:rework,story:<story-id> -d "Check out story/<story-id>-design (pull it), re-implement against the corrected docs/design/<story-id>.md, then merge story/<story-id>-design into story/<story-id> before closing, same as the original implement stage. Story: docs/stories/<story-id>.md. Conventions: CLAUDE.md." --json`
+   Note: `--json` output is a bare array/object today but becomes `{"data": ..., "schema_version": N}` under bd v2.0 (`BD_JSON_ENVELOPE=1`); unwrap with `jq 'if type=="object" and has("data") then .data else . end'` before indexing, and do not assume an array.
 2. `bd dep add <new-engineer-issue> <your-issue>`
 3. `bd show <your-issue>`: the review issue is listed under BLOCKS. `bd dep add <review-issue> <new-engineer-issue>`
    so review also waits for the re-implementation.

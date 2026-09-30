@@ -25,7 +25,7 @@ session", skip directly to "Assess the po/architect throttle" below.
    - Its `story:<story-id>` label names the story. Read `docs/stories/<story-id>.md` in full.
    - Read `docs/design/<story-id>.md` if it exists; if it doesn't and this issue is past the
      design stage, that absence is itself a candidate diagnosis.
-   - `bd list --label story:<story-id> --all --json` for every issue in the story's chain,
+   - `bd list --label story:<story-id> --all --json` for every issue in the story's chain, (`--json` output is a bare array/object today but becomes `{"data": ..., "schema_version": N}` under bd v2.0 (`BD_JSON_ENVELOPE=1`); unwrap with `jq 'if type=="object" and has("data") then .data else . end'` before indexing, and do not assume an array.)
      including closed ones; `bd show`/`bd comments` the ones that look relevant to see what each
      stage actually closed with, and any rework issues already filed against this story.
    - The story's branches (`story/<story-id>`, and `-design`/`-tests` where they exist): `git log`,
@@ -159,7 +159,7 @@ decide per situation, favoring finishing in-flight work over starting new work w
 unsure.
 
 1. Read broadly, the same habit as steps 1-5 above:
-   - `bd list --limit 200 --json` for the whole board: how many stories are open, at what stage
+   - `bd list --limit 200 --json` for the whole board: how many stories are open, at what stage (`--json` output is a bare array/object today but becomes `{"data": ..., "schema_version": N}` under bd v2.0 (`BD_JSON_ENVELOPE=1`); unwrap with `jq 'if type=="object" and has("data") then .data else . end'` before indexing, and do not assume an array.)
      each sits, how much is stalled on `needs-human`/`needs-team-lead`, and - this matters - how
      many stories have only a `role:team-lead,needs-chain` issue open with no design/tests/
      implement/verify/review issue built yet (`bin/new-story.sh` hasn't run for them). Those count

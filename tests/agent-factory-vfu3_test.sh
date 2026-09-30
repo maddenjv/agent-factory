@@ -63,6 +63,7 @@ test_ac1_documents_filing_a_merge_request_issue() {
 # covering next_issue()/is_ready() with no top-level execution, so sourcing it is side-effect-free.
 FNS="$TMP/fns.sh"
 sed -n '/^log()/,/^sync_dir()/{/^sync_dir()/d; p}' bin/agent-loop.sh > "$FNS"
+cat bin/bdjson.sh >> "$FNS"  # bd_unwrap: agent-loop.sh sources it outside the extracted range
 
 mkdir -p "$TMP/bin-ni"
 cat > "$TMP/bin-ni/bd" <<'STUB'
