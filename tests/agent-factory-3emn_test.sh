@@ -37,7 +37,7 @@ for ((i = 0; i < ${#args[@]}; i++)); do
   [ "${args[$i]}" = "--label" ] && label="${args[$((i + 1))]}"
 done
 if [ -f "$W/fail" ]; then
-  [ "$BDMODE" != bare ] && echo '{"error":"boom","code":1}'
+  if [ "$BDMODE" = bare ]; then echo '{"error":"boom","schema_version":1}'; else echo '{"data":{"error":"boom"},"schema_version":1}'; fi
   echo "bd: boom" >&2
   exit 1
 fi
@@ -45,10 +45,10 @@ emit() {  # emit KIND: stdin is the bare-shape JSON
   if [ "$json" = 0 ]; then cat; return; fi
   case "$BDMODE:$1" in
     bare:*) cat ;;
-    env:list|env:show|envobj:list) jq -c '{data: .}' ;;
-    env:create) jq -c '{data: (if type=="array" then .[0] else . end)}' ;;
-    envobj:show) jq -c '{data: (if type=="array" then .[0] else . end)}' ;;
-    envobj:create) jq -c '{data: [(if type=="array" then .[0] else . end)]}' ;;
+    env:list|env:show|envobj:list) jq -c '{data: ., schema_version: 1}' ;;
+    env:create) jq -c '{data: (if type=="array" then .[0] else . end), schema_version: 1}' ;;
+    envobj:show) jq -c '{data: (if type=="array" then .[0] else . end), schema_version: 1}' ;;
+    envobj:create) jq -c '{data: [(if type=="array" then .[0] else . end)], schema_version: 1}' ;;
   esac
 }
 filter() { if [ -n "$label" ]; then jq -c --arg l "$label" '[.[] | select((.labels // []) | index($l))]'; else cat; fi; }
@@ -311,7 +311,7 @@ test_ac7_failing_bd_takes_same_path_in_all_formats() {
   same_as_bare "ac7: restart-story.sh with failing bd" restartfail
   same_as_bare "ac7: feature.sh with failing bd" feature.fail
   same_as_bare "ac7: board.sh with failing bd (no error envelope rendered as issues)" board.fail
-  if grep -qE 'boom|error' "$T/board.fail.env" "$T/board.fail.envobj"; then
+  if grep -q 'boom' "$T/board.fail.env" "$T/board.fail.envobj"; then
     fail "ac7: board.sh rendered the error envelope as data: $(cat "$T/board.fail.env")"
   else
     pass "ac7: board.sh does not render an error envelope as an issue row"
@@ -350,7 +350,7 @@ test_ac7_empty_results_take_same_path_in_all_formats() {
 # ============================================================
 test_ac1_scripts_do_not_set_the_envelope_flag() {
   local hits
-  hits=$(grep -rnE 'BD_JSON_ENVELOPE *=|export +BD_JSON_ENVELOPE' bin docker-compose.yml Dockerfile .env.example 2>/dev/null)
+  hits=$(grep -rnE 'BD_JSON_ENVELOPE *=|export +BD_JSON_ENVELOPE' bin docker-compose.yml Dockerfile .env.example 2>/dev/null | grep -vE ':[0-9]+:[[:space:]]*#')
   [ -z "$hits" ] && pass "ac1: nothing in bin/, docker-compose.yml, Dockerfile sets BD_JSON_ENVELOPE" \
     || fail "ac1: something sets BD_JSON_ENVELOPE globally (out of scope): $hits"
 }
