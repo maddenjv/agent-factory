@@ -205,10 +205,12 @@ cat > "$T/board.json" <<'JSON'
 JSON
 jq -c '[.[] | select(.id=="rd-1")]' "$T/board.json" > "$T/board.ready.json"
 
+# One timestamp shared by every mode, so a second boundary between runs cannot change board output.
+BOARD_TS=$(date -u +%FT%TZ)
 run_board() {  # run_board MODE [fail]
   new_world "$1"; cp "$T/board.json" "$W/issues.json"; cp "$T/board.ready.json" "$W/ready.json"
   [ "${2:-}" = fail ] && touch "$W/fail"
-  printf '%s [qa] nh-1 flagged needs-human\n' "$(date -u +%FT%TZ)" > "$W/data/control/alerts.log"
+  printf '%s [qa] nh-1 flagged needs-human\n' "$BOARD_TS" > "$W/data/control/alerts.log"
   local out
   out=$(cd "$W" && PATH="$T/stubs:$PATH" TERM=dumb DATA_DIR="$W/data" timeout 20 bash -c '
       source "$1/bin/board.sh"; render' _ "$KIT_DIR" 2>&1 | grep -v '^== ')
