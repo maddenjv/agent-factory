@@ -1,10 +1,11 @@
 # agent-factory
 
-Five agents (po, architect, qa, engineer, reviewer), each its own Docker container, coordinated
+Five working agents (po, architect, qa, engineer, reviewer) plus a team-lead that triages and
+unsticks their work, each its own Docker container, coordinated
 through Beads and git, running on Claude Code (default) or GitHub Copilot CLI — chosen once at
 setup time with `bin/init.sh --harness=<claude-code|copilot>` (see "Setup" below). Agents run with
 full tool permissions inside their container (`--dangerously-skip-permissions` for Claude Code,
-`--allow-all-tools --no-ask-user` for GitHub Copilot CLI). The status board and all 5 agents show
+`--allow-all-tools --no-ask-user` for GitHub Copilot CLI). The status board and all the agents show
 as panes in one tmux window; `ops` — the shell you type into — is a separate window.
 
 ```
@@ -114,10 +115,6 @@ moment). It commits initial scaffolding (`docs/stories/`, `docs/design/`, beads 
 a new `CLAUDE.md` or an appended section on your existing one) straight to your project's `main`
 — it refuses to run at all if your project isn't already clean on `main` first.
 
-**Before running unattended**, in the `ops` window: `smoke-test.sh`. It closes 8 issues concurrently and checks
-every close persisted. Beads has open reports of lost writes under concurrent agents in embedded mode; this kit
-uses server mode, but verify on your bd version.
-
 ## Day to day
 | Want to | Do |
 |---|---|
@@ -172,23 +169,3 @@ and keeps retrying the same issue indefinitely.
   it, and the reviewer pushes straight into its checked-out `main` (see Setup). Agents cannot
   reach your project's own remote (GitHub, etc.) - only the local push to your working tree - so
   publishing beyond that stays a separate, manual step under your own control.
-
-## Things I could not test (Docker unavailable where this was written) - check first
-1. `dolthub/dolt-sql-server` honouring `DOLT_ROOT_HOST=%` with no root password, and listening on 3306 (env.sh assumes 3306).
-2. `bd init --server --server-host dolt` writing config that the other clones inherit from git (`.beads/`
-   is committed by init-project.sh). If a clone reports it cannot find the database, run `bd doctor`.
-3. Exact `bd` flags used: `ready --label/--limit/--json`, `update --claim --assignee/--status`, `create -l -d -t --json`,
-   `dep add`, `label add/remove`, `close --reason`, `list --json`. Confirm with `bd --help` on your version.
-4. Claude Code flags: `--dangerously-skip-permissions`, `--max-turns`, `--output-format stream-json --verbose`, `--model`.
-5. If `bd init` creates git hooks that break commits in the clones, `git config core.hooksPath /dev/null` in those clones.
-6. GitHub Copilot CLI (`HARNESS=copilot`) inside the built image: `-p`/`-s`/`--no-ask-user`/`--allow-all-tools`/`--model`
-   were confirmed against `copilot --help` (npm `@github/copilot`) outside the container while writing this, but not
-   run end-to-end inside a built `agent` image (no Docker where this was written) or against a live GitHub Copilot
-   account. `--max-autopilot-continues <count>` (a real continuation-count flag, confirmed to exist) is deliberately
-   NOT wired up as a `MAX_TURNS` equivalent — its own `--help`/`help billing` text says it only throttles
-   `--mode autopilot`, a different, more interactive mode than the plain `-p` invocation used here; `timeout
-   "$ITERATION_TIMEOUT"` remains the real hard stop on turn count for Copilot sessions.
-7. The exact wording of a Copilot CLI quota/rate-limit hit (`quota_hit_message`'s copilot-pattern branch in
-   `bin/agent-loop.sh`) and whether `~/.copilot` (from `copilot login`) alone is sufficient for non-interactive
-   reuse in a headless container the way `~/.claude` is, or a token env var is effectively required — confirm
-   against a live account.
