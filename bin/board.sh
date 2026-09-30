@@ -32,8 +32,11 @@ agent_last_started_epoch() {
 # recent_alerts: reads the last 6 lines of alerts.log (same tail window as before) and writes the
 # filtered result to stdout - needs-human alerts whose issue has since lost the label (or been
 # closed) and usage-limit alerts whose wait window has elapsed are dropped; any other alert is
-# dropped once older than ALERT_MAX_AGE_MINUTES (default 60). Lines that don't match the log
-# format or have an unparseable timestamp are printed unchanged.
+# dropped once older than ALERT_MAX_AGE_MINUTES (default 60). Lines with an unparseable
+# timestamp are printed unchanged. A line that doesn't match the log format is a continuation of
+# the nearest preceding timestamped line in the window and is shown iff that line was shown; with
+# no preceding timestamped line in the window (truncated alert) it is printed (fail visible) -
+# agent-factory-b50b.
 #
 # Preflight alerts (the "bd cannot reach" and "harness failed to run" messages specifically - NOT
 # "usage limit hit", which stays governed purely by the wait-window logic below, per
@@ -77,33 +80,42 @@ recent_alerts() {
     (( started_epoch > restart_epoch[$agent] )) && restart_epoch[$agent]=$started_epoch
   done
 
+  local seen_header=0 header_shown=0
   while IFS= read -r line; do
-    if [[ ! $line =~ ^([0-9T:-]+Z)\ \[([^]]*)\]\ (.*)$ ]]; then
-      echo "$line"; continue
+    if [[ $line =~ ^[0-9T:-]+Z\ \[[^]]*\]\ .*$ ]]; then
+      seen_header=1
+      if alert_line_visible "$line"; then header_shown=1; echo "$line"; else header_shown=0; fi
+    elif (( ! seen_header || header_shown )); then
+      echo "$line"     # continuation of a shown header, or orphan before any header (fail visible)
     fi
-    ts="${BASH_REMATCH[1]}"; agent="${BASH_REMATCH[2]}"; msg="${BASH_REMATCH[3]}"
-
-    if [[ $msg =~ ^preflight:\ (bd\ cannot\ reach|harness\ failed\ to\ run) ]]; then
-      alert_epoch=$(date -d "$ts" +%s 2>/dev/null) && [ -n "${restart_epoch[$agent]:-}" ] \
-        && (( alert_epoch < restart_epoch[$agent] )) && continue
-    fi
-
-    if [[ $msg =~ ^([A-Za-z0-9_.-]+)\ (flagged\ needs-human|not\ completed\ after\ [0-9]+\ attempts\;\ labelled\ needs-human) ]]; then
-      id="${BASH_REMATCH[1]}"
-      still_needs_human "$id" && echo "$line"
-      continue
-    fi
-
-    if [[ $msg =~ usage\ limit\ hit.*waiting\ ([0-9]+)s ]]; then
-      wait_s="${BASH_REMATCH[1]}"
-      alert_epoch=$(date -d "$ts" +%s 2>/dev/null) || { echo "$line"; continue; }
-      (( now < alert_epoch + wait_s )) && echo "$line"
-      continue
-    fi
-
-    alert_epoch=$(date -d "$ts" +%s 2>/dev/null) || { echo "$line"; continue; }
-    if (( now - alert_epoch <= max_age_s )); then echo "$line"; fi
   done <<< "$lines"
+}
+
+# alert_line_visible LINE: returns 0 if a timestamped alert line should be shown, 1 to hide it.
+# Reads restart_epoch, now and max_age_s from recent_alerts' locals (bash dynamic scoping).
+alert_line_visible() {
+  local line="$1" ts agent msg id wait_s alert_epoch
+  [[ $line =~ ^([0-9T:-]+Z)\ \[([^]]*)\]\ (.*)$ ]] || return 0
+  ts="${BASH_REMATCH[1]}"; agent="${BASH_REMATCH[2]}"; msg="${BASH_REMATCH[3]}"
+
+  if [[ $msg =~ ^preflight:\ (bd\ cannot\ reach|harness\ failed\ to\ run) ]]; then
+    alert_epoch=$(date -d "$ts" +%s 2>/dev/null) && [ -n "${restart_epoch[$agent]:-}" ] \
+      && (( alert_epoch < restart_epoch[$agent] )) && return 1
+  fi
+
+  if [[ $msg =~ ^([A-Za-z0-9_.-]+)\ (flagged\ needs-human|not\ completed\ after\ [0-9]+\ attempts\;\ labelled\ needs-human) ]]; then
+    id="${BASH_REMATCH[1]}"
+    still_needs_human "$id"; return
+  fi
+
+  if [[ $msg =~ usage\ limit\ hit.*waiting\ ([0-9]+)s ]]; then
+    wait_s="${BASH_REMATCH[1]}"
+    alert_epoch=$(date -d "$ts" +%s 2>/dev/null) || return 0
+    (( now < alert_epoch + wait_s )); return
+  fi
+
+  alert_epoch=$(date -d "$ts" +%s 2>/dev/null) || return 0
+  (( now - alert_epoch <= max_age_s ))
 }
 
 ready_section() {
