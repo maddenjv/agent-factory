@@ -12,6 +12,7 @@ data/
 
 # Dotfile to add to the factory-agent image
 dotfiles/*
+!dotfiles/.gitkeep
 
 # Operator-supplied extra CA certs for the agent image (see docs/ARCHITECTURE.md)
 extra-ca/*

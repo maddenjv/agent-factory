@@ -59,7 +59,8 @@ RUN userdel -r node 2>/dev/null; groupdel node 2>/dev/null; \
     groupadd -g "$HOST_GID" "$HOST_USER" && useradd -u "$HOST_UID" -g "$HOST_GID" -m -s /bin/bash "$HOST_USER"
 
 USER ${HOST_USER}
-COPY --chown=${HOST_UID}:${HOST_GID} dotfiles/* /home/${HOST_USER}
+COPY --chown=${HOST_UID}:${HOST_GID} dotfiles/ /home/${HOST_USER}/
+RUN rm -f /home/${HOST_USER}/.gitkeep
 ENV HOME=/home/${HOST_USER}
 
 CMD ["bash"]

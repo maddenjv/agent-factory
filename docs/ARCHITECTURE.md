@@ -69,6 +69,11 @@ remains, and records that judgment - with a reason - in `.agent-factory/control/
     nothing supplied the build is unchanged. `extra-ca/.gitkeep` must stay (otherwise `COPY`
     fails; restore with `mkdir extra-ca && touch extra-ca/.gitkeep`). Runtime injection without
     a rebuild is out of scope.
+  - **Dotfiles**: `dotfiles/` is optional. Files in it (e.g. `.bashrc`, `.gitconfig`) are copied
+    into the container user's home at image build, owned by that user (git-ignored; never commit
+    them); rebuild with `docker compose build agent`. With nothing supplied the build is
+    unchanged. `dotfiles/.gitkeep` must stay (otherwise `COPY` fails; restore with
+    `mkdir dotfiles && touch dotfiles/.gitkeep`); it is removed from the image's home.
 - **Tracker**: Beads (`bd`), Dolt-backed, shared across all five containers.
 
 ## Layout
@@ -77,6 +82,7 @@ bin/              orchestration scripts (init.sh, start.sh, stop.sh, agent-loop.
 agents/           one prompt file per role (po.md, architect.md, engineer.md, qa.md, reviewer.md)
 docker-compose.yml
 Dockerfile        the agent image (this repo owns it - see below)
+dotfiles/         optional operator-supplied dotfiles (git-ignored) copied into the agent image home
 extra-ca/         operator-supplied extra CA certs (*.crt, git-ignored) baked into the agent image
 docs/stories/     PO-authored user stories, one per story id
 docs/design/      architect-authored design docs, one per story id
