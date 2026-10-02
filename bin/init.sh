@@ -18,6 +18,17 @@ case "$HARNESS_FLAG" in
   *) echo "error: --harness must be 'claude-code' or 'copilot' (got '$HARNESS_FLAG')" >&2; exit 1 ;;
 esac
 
+# Dependency check, also before anything touches the filesystem: lib.sh's dc() runs
+# `docker compose -f ...`, and without the Compose plugin Docker's error is about that flag.
+if ! command -v docker >/dev/null 2>&1; then
+  echo "error: Docker is not installed (or not on PATH). Install Docker with the Compose plugin, then re-run bin/init.sh." >&2
+  exit 1
+fi
+if ! docker compose version >/dev/null 2>&1; then
+  echo "error: Docker Compose (the 'docker compose' plugin) is not available. Install the Docker Compose plugin, then re-run bin/init.sh." >&2
+  exit 1
+fi
+
 chmod +x "$KIT_DIR"/bin/*.sh
 
 mkdir -p "$DATA_DIR"   # moved up: AGENT_ENV_FILE's project-level candidate must exist to test for
