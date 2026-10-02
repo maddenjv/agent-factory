@@ -22,7 +22,8 @@ ITERATION_TIMEOUT="${ITERATION_TIMEOUT:-45m}"
 IDLE_SLEEP="${IDLE_SLEEP:-60}"
 MAX_ATTEMPTS_PER_ISSUE="${MAX_ATTEMPTS_PER_ISSUE:-2}"
 MAX_CONSECUTIVE_FAILURES="${MAX_CONSECUTIVE_FAILURES:-3}"
-THROTTLE_STALE_SECS="${THROTTLE_STALE_SECS:-900}"        # how often team-lead re-assesses
+CLAIM_SKIP_SECS="${CLAIM_SKIP_SECS:-600}"                # how long a failed-to-claim issue is skipped
+THROTTLE_STALE_SECS="${THROTTLE_STALE_SECS:-900}"       # how often team-lead re-assesses
 THROTTLE_ALERT_STALE_SECS="${THROTTLE_ALERT_STALE_SECS:-3600}"  # alert if it falls further behind than this
 DAILY_BUDGET_USD="${DAILY_BUDGET_USD:-}"
 PREFLIGHT="${PREFLIGHT:-1}"
@@ -74,6 +75,22 @@ alert() {
   log "ALERT: $*"
   if [ -n "${NOTIFY_URL:-}" ]; then curl -fsS -m 10 -d "[$AGENT_ID] $*" "$NOTIFY_URL" >/dev/null 2>&1 || true; fi
 }
+
+# A claim that fails must not wedge the loop on the same issue: remember it ("id:epoch" entries)
+# and let next_issue() skip it for CLAIM_SKIP_SECS.
+CLAIM_SKIP=""
+skip_claim_failed() { CLAIM_SKIP="$CLAIM_SKIP $1:$(date +%s)"; }
+claim_skip_ids() {  # ids still inside the skip window; drops expired entries
+  local now e keep="" ids="" ttl="${CLAIM_SKIP_SECS:-600}"; now=$(date +%s)
+  for e in $CLAIM_SKIP; do
+    [ $((now - ${e##*:})) -lt "$ttl" ] && { keep="$keep $e"; ids="$ids ${e%:*}"; }
+  done
+  CLAIM_SKIP="$keep"; echo "$ids"
+}
+handle_claim_failure() {  # handle_claim_failure ID: log bd's reason and back the issue off
+  log "could not claim $1: $(head -c 300 "${CLAIM_ERR:-/dev/null}" 2>/dev/null | tr '\n' ' ') - skipping for ${CLAIM_SKIP_SECS:-600}s"
+  skip_claim_failed "$1"
+}
 stopping() { [ -f "$CONTROL/STOP" ] || [ -f "$CONTROL/STOP.$ROLE" ]; }
 
 # ---------- beads helpers ----------
@@ -89,11 +106,13 @@ BUILD_ROLE_RE='^(po|architect|engineer|qa|reviewer)([-_.].*)?$'
 
 next_issue() {
   if [ "$ROLE" = "team-lead" ]; then
-    bd list --limit 200 --json 2>>"$LOGDIR/bd-err.log" | bd_unwrap | jq -r --arg me "$AGENT_ID" --arg re "$BUILD_ROLE_RE" '
+    local skip; skip=$(claim_skip_ids)
+    bd list --limit 200 --json 2>>"$LOGDIR/bd-err.log" | bd_unwrap | jq -r --arg me "$AGENT_ID" --arg re "$BUILD_ROLE_RE" --arg skip "$skip" '
       def stale_escalator: (.assignee // "") as $a | ($a | test($re)) and ([(.labels // [])[] | select(startswith("role:")) | .[5:]] | any(. as $r | $a == $r or ($a | startswith($r + "-") or startswith($r + "_") or startswith($r + "."))));
       [ .[]?
         | select(.status != "closed")
         | select(((.labels // []) | index("needs-human")) | not)
+        | select(.id as $i | ($skip | split(" ") | index($i)) | not)
         | select( (((.labels // []) | index("needs-team-lead"))
                    and (((.assignee // "") == "") or (.assignee == $me) or stale_escalator))
                   or ( ((((.labels // []) | any(startswith("role:"))) | not)
@@ -111,13 +130,16 @@ next_issue() {
 
 claim() {  # atomic claim when unassigned; resume if it was already ours
   local id=$1 who
+  CLAIM_ERR="${LOGDIR:-/tmp}/claim-err.log"; : > "$CLAIM_ERR"
   who=$(issue_field "$id" assignee)
-  if [ -z "$who" ]; then bd update "$id" --claim --assignee "$AGENT_ID" >/dev/null 2>&1
-  elif [ "$who" = "$AGENT_ID" ]; then bd update "$id" --status in_progress >/dev/null 2>&1
+  if [ -z "$who" ]; then bd update "$id" --claim --assignee "$AGENT_ID" >/dev/null 2>"$CLAIM_ERR"
+  elif [ "$who" = "$AGENT_ID" ]; then bd update "$id" --status in_progress >/dev/null 2>"$CLAIM_ERR"
   elif [ "$ROLE" = team-lead ] && [[ "$who" =~ $BUILD_ROLE_RE ]] && has_label "$id" needs-team-lead \
        && show_json "$id" | jq -e --arg a "$who" '[(.labels // [])[] | select(startswith("role:")) | .[5:]] | any(. as $r | $a == $r or ($a | test("^" + $r + "[-_.]")))' >/dev/null 2>&1; then
-    # take over the escalating role's stale claim (compare-and-swap; --force overrides its live claim)
-    bd update "$id" --if-assignee "$who" --assignee "$AGENT_ID" --status in_progress --force >/dev/null 2>&1
+    # take over the escalating role's stale claim. bd rejects --force together with --if-assignee, so
+    # do the compare-and-swap by hand: re-read the assignee right before the forced update.
+    [ "$(issue_field "$id" assignee)" = "$who" ] \
+      && bd update "$id" --assignee "$AGENT_ID" --status in_progress --force >/dev/null 2>"$CLAIM_ERR"
   else return 1; fi
 }
 
@@ -459,7 +481,11 @@ while :; do
   fi
   idle_logged=0
 
-  if ! claim "$id"; then log "could not claim $id"; sleep 5; continue; fi
+  if ! claim "$id"; then
+    handle_claim_failure "$id"
+    if [ "$ROLE" = "team-lead" ]; then sleep 1; else sleep 5; fi
+    continue
+  fi
   if ! sync_repo; then
     log "git sync failed; releasing $id"; bd update "$id" --status open >/dev/null 2>&1
     fails=$((fails+1))
