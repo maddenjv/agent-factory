@@ -20,6 +20,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       git jq curl ca-certificates shellcheck \
     && rm -rf /var/lib/apt/lists/*
 
+# Operator-supplied extra CA certificates (docs/ARCHITECTURE.md "Extra CA certificates").
+COPY extra-ca/ /tmp/extra-ca/
+RUN set -eu; \
+    found=0; \
+    for f in /tmp/extra-ca/* /tmp/extra-ca/.[!.]*; do \
+      [ -e "$f" ] || continue; \
+      name=$(basename "$f"); \
+      [ "$name" = .gitkeep ] && continue; \
+      case "$name" in \
+        *.crt) ;; \
+        *) echo "error: extra-ca/$name: only PEM files named *.crt are accepted (rename it, or remove it)" >&2; exit 1 ;; \
+      esac; \
+      if ! grep -q 'BEGIN CERTIFICATE' "$f" || ! openssl x509 -in "$f" -noout >/dev/null 2>&1; then \
+        echo "error: extra-ca/$name is not a valid PEM certificate" >&2; exit 1; \
+      fi; \
+      mkdir -p /usr/local/share/ca-certificates/extra; \
+      cp "$f" "/usr/local/share/ca-certificates/extra/$name"; \
+      found=1; \
+    done; \
+    if [ "$found" = 1 ]; then update-ca-certificates; fi; \
+    rm -rf /tmp/extra-ca
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+
 RUN case "$HARNESS" in \
       claude-code) npm install -g @anthropic-ai/claude-code ;; \
       copilot) npm install -g @github/copilot ;; \
