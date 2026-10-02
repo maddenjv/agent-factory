@@ -63,10 +63,10 @@ test_claim_team_lead_takes_over_stale_escalator_claim() {
   local out
   out=$(issue c1 in_progress po "needs-team-lead,role:po" | run_fn team-lead claim c1)
   grep -q '^rc=0$' <<<"$out" || { fail "claim: takeover of po's stale claim returned non-zero: $out"; return; }
-  grep -q -- '--if-assignee po' <<<"$out" && grep -q -- '--assignee team-lead' <<<"$out" \
-    && grep -q -- '--force' <<<"$out" \
-    || { fail "claim: expected bd update --if-assignee po --assignee team-lead --force - got: $out"; return; }
-  pass "claim: team-lead takes over the escalating role's claim via compare-and-swap with --force"
+  grep -q -- '--assignee team-lead' <<<"$out" && grep -q -- '--force' <<<"$out" \
+    && ! grep -q -- '--if-assignee' <<<"$out" \
+    || { fail "claim: expected bd update --assignee team-lead --force (no --if-assignee, bd rejects the pair) - got: $out"; return; }
+  pass "claim: team-lead takes over the escalating role's claim with a forced reassign"
 }
 
 test_claim_team_lead_does_not_steal_other_agents_issue() {
