@@ -47,7 +47,15 @@ if [ ! -f "$AGENT_ENV_FILE" ]; then
   # lib.sh resolved AGENT_ENV_FILE to the not-yet-existing $KIT_DIR/.env fallback; re-point it so
   # the appends below and every dc call use the file just created.
   AGENT_ENV_FILE="$DATA_DIR/.env"; export AGENT_ENV_FILE
-  echo "Created $DATA_DIR/.env with defaults (reuses your host ~/.claude login - no edits needed). Optional settings (CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_API_KEY, models, budget) can be edited there; if you change any, re-run bin/init.sh afterwards. Continuing setup..."
+  # shellcheck disable=SC2088  # literal ~ is intended: it is display text, not a path
+  if [ "$default_harness" = "copilot" ]; then
+    harness_login="~/.copilot login (run 'copilot login' on the host if needed)"
+    harness_tokens="COPILOT_GITHUB_TOKEN / GH_TOKEN / GITHUB_TOKEN"
+  else
+    harness_login="~/.claude login"
+    harness_tokens="CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_API_KEY"
+  fi
+  echo "Created $DATA_DIR/.env with defaults (reuses your host $harness_login - no edits needed). Optional settings ($harness_tokens, models, budget) can be edited there; if you change any, re-run bin/init.sh afterwards. Continuing setup..."
 fi
 grep -q '^HOST_UID=' "$AGENT_ENV_FILE" || echo "HOST_UID=$(id -u)" >> "$AGENT_ENV_FILE"
 grep -q '^HOST_GID=' "$AGENT_ENV_FILE" || echo "HOST_GID=$(id -g)" >> "$AGENT_ENV_FILE"
