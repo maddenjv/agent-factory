@@ -161,11 +161,17 @@ test_ac4_fresh_init_creates_project_level_env() {
   # sanity: neither .env exists yet in either scratch tree
   [ -f "$tmpkit/.env" ] && { bad "ac4: test setup bug - tmpkit already has a .env"; return; }
 
-  out=$(PROJECT_DIR="$tmpproject" bash "$tmpkit/bin/init.sh" 2>&1)
+  # Single-run init (agent-factory-6ixl): creating the starter .env no longer stops the script;
+  # it continues into the docker steps, so stub docker (always succeeds) to let it run through.
+  local stubbin
+  stubbin=$(mktemp -d); cleanup_dirs+=("$stubbin")
+  printf '#!/bin/sh\nexit 0\n' > "$stubbin/docker"; chmod +x "$stubbin/docker"
+
+  out=$(PATH="$stubbin:$PATH" PROJECT_DIR="$tmpproject" bash "$tmpkit/bin/init.sh" 2>&1)
   status=$?
 
-  if [ "$status" -ne 1 ]; then
-    bad "ac4: bin/init.sh exited $status on a fresh project with no .env anywhere, expected 1 (create-and-stop flow); output: $out"
+  if [ "$status" -ne 0 ]; then
+    bad "ac4: bin/init.sh exited $status on a fresh project with no .env anywhere, expected 0 (first run now continues setup); output: $out"
     return
   fi
   if [ -f "$tmpkit/.env" ]; then
@@ -180,11 +186,14 @@ test_ac4_fresh_init_creates_project_level_env() {
     bad "ac4: bin/init.sh's message doesn't name the project-level path it created ($tmpproject/.agent-factory/.env); output: $out"
     return
   fi
-  if ! diff -q "$tmpkit/.env.example" "$tmpproject/.agent-factory/.env" >/dev/null 2>&1; then
-    bad "ac4: created .env doesn't match .env.example's starter contents"
+  # init.sh appends HOST_UID/GID/USER, CONTAINER_HOME (and HARNESS) after creating the file, so compare the
+  # starter contents with those appended keys filtered out of both sides.
+  local filt='^(HOST_UID|HOST_GID|HOST_USER|CONTAINER_HOME|HARNESS)='
+  if ! diff -q <(grep -Ev "$filt" "$tmpkit/.env.example") <(grep -Ev "$filt" "$tmpproject/.agent-factory/.env") >/dev/null 2>&1; then
+    bad "ac4: created .env doesn't match .env.example's starter contents (ignoring appended HOST_*/HARNESS keys)"
     return
   fi
-  ok "ac4: fresh init creates the starter .env at the project-level path, from .env.example, exits 1, and names the path"
+  ok "ac4: fresh init creates the starter .env at the project-level path, from .env.example, exits 0 (continues setup), and names the path"
 }
 
 # AC5: a project that already has an established kit-level $KIT_DIR/.env (from before this
