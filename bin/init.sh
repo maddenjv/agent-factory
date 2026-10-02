@@ -33,8 +33,10 @@ if [ ! -f "$AGENT_ENV_FILE" ]; then
   # unconditionally records HARNESS=claude-code if no HARNESS= line exists yet.
   default_harness="${HARNESS_FLAG:-claude-code}"
   [ "$default_harness" = "claude-code" ] || echo "HARNESS=$default_harness" >> "$DATA_DIR/.env"
-  echo "Created $DATA_DIR/.env - defaults to reusing your host ~/.claude login (no key needed); edit it only if you want a separate CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY instead, then re-run bin/init.sh"
-  exit 1
+  # lib.sh resolved AGENT_ENV_FILE to the not-yet-existing $KIT_DIR/.env fallback; re-point it so
+  # the appends below and every dc call use the file just created.
+  AGENT_ENV_FILE="$DATA_DIR/.env"; export AGENT_ENV_FILE
+  echo "Created $DATA_DIR/.env with defaults (reuses your host ~/.claude login - no edits needed). Optional settings (CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_API_KEY, models, budget) can be edited there; if you change any, re-run bin/init.sh afterwards. Continuing setup..."
 fi
 grep -q '^HOST_UID=' "$AGENT_ENV_FILE" || echo "HOST_UID=$(id -u)" >> "$AGENT_ENV_FILE"
 grep -q '^HOST_GID=' "$AGENT_ENV_FILE" || echo "HOST_GID=$(id -g)" >> "$AGENT_ENV_FILE"
@@ -50,11 +52,11 @@ else
   grep -q '^HARNESS=' "$AGENT_ENV_FILE" || echo "HARNESS=claude-code" >> "$AGENT_ENV_FILE"
 fi
 
-# Checked here, before anything below creates .agent-factory/ (which would otherwise make this
-# repo look "dirty" to the same check). bin/init-project.sh commits scaffolding directly to main
+# .agent-factory/ is excluded: this script creates it (untracked until init-project.sh
+# gitignores it), so it must not make a re-run look "dirty". bin/init-project.sh commits scaffolding directly to main
 # on your behalf next, using explicit paths only - this just makes sure that isn't quietly
 # mixed in with unrelated work you have in progress.
-if [ -n "$(git -C "$PROJECT_DIR" status --porcelain)" ]; then
+if [ -n "$(git -C "$PROJECT_DIR" status --porcelain -- . ":(exclude)${DATA_DIR#"$PROJECT_DIR"/}")" ]; then
   echo "error: $PROJECT_DIR has uncommitted changes. Commit or stash them first, then re-run bin/init.sh." >&2
   exit 1
 fi
