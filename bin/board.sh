@@ -31,14 +31,27 @@ agent_last_started_epoch() {
   date -d "$ts" +%s 2>/dev/null
 }
 
-# recent_alerts: reads the last 6 lines of alerts.log (same tail window as before) and writes the
+# alert_window FILE: prints the last 6 alerts of FILE in full (header line plus its continuation
+# lines). Only the last 200 physical lines are scanned; lines before the first header in that
+# tail are orphans (their header is out of reach) and are dropped - agent-factory-lv8s. A log with
+# no header-shaped line at all falls back to its last 6 physical lines (fail visible, 2do).
+# A header is any "TOKEN [agent] " line, so unparseable timestamps still count (47q AC6).
+alert_window() {
+  tail -n 200 "$1" 2>/dev/null | awk -v keep=6 '
+    /^[^ ]+ \[[^]]*\] / { n++; hdr[n] = NR }
+    { all[NR] = $0 }
+    n > 0 { line[NR] = $0 }
+    END { if (!n) { for (i = NR > keep ? NR - keep + 1 : 1; i <= NR; i++) print all[i]; exit }; s = hdr[n > keep ? n - keep + 1 : 1]; for (i = s; i <= NR; i++) print line[i] }'
+}
+
+# recent_alerts: reads the last 6 alerts of alerts.log (header + continuation lines; see alert_window) and writes the
 # filtered result to stdout - needs-human alerts whose issue has since lost the label (or been
 # closed) and usage-limit alerts whose wait window has elapsed are dropped; any other alert is
 # dropped once older than ALERT_MAX_AGE_MINUTES (default 60). Lines with an unparseable
 # timestamp are printed unchanged. A line that doesn't match the log format is a continuation of
-# the nearest preceding timestamped line in the window and is shown iff that line was shown; with
-# no preceding timestamped line in the window (truncated alert) it is printed (fail visible) -
-# agent-factory-b50b.
+# the nearest preceding timestamped line in the window and is shown iff that line was shown.
+# Continuation lines whose header is outside the scanned tail are dropped, never shown headerless
+# (agent-factory-lv8s, supersedes the agent-factory-b50b fail-visible rule).
 #
 # Preflight alerts (the "bd cannot reach" and "harness failed to run" messages specifically - NOT
 # "usage limit hit", which stays governed purely by the wait-window logic below, per
@@ -63,7 +76,7 @@ recent_alerts() {
   local max_age_s=$(( max_min * 60 ))
   now=$(date -u +%s)
   local lines
-  lines=$(tail -n 6 "$DATA_DIR/control/alerts.log" 2>/dev/null)
+  lines=$(alert_window "$DATA_DIR/control/alerts.log")
 
   local -A restart_epoch
   local pf_epoch
@@ -84,11 +97,11 @@ recent_alerts() {
 
   local seen_header=0 header_shown=0
   while IFS= read -r line; do
-    if [[ $line =~ ^[0-9T:-]+Z\ \[[^]]*\]\ .*$ ]]; then
+    if [[ $line =~ ^[^\ ]+\ \[[^]]*\]\ .*$ ]]; then
       seen_header=1
       if alert_line_visible "$line"; then header_shown=1; echo "$line"; else header_shown=0; fi
     elif (( ! seen_header || header_shown )); then
-      echo "$line"     # continuation of a shown header, or orphan before any header (fail visible)
+      echo "$line"     # continuation of a shown header, or any line of a header-less log (fail visible)
     fi
   done <<< "$lines"
 }

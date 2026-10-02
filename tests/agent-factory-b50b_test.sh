@@ -217,8 +217,8 @@ UL-CONT-2
     "$first" "UL-CONT-1" "UL-CONT-2"
 }
 
-# --- AC4: leading lines in the tail window with no preceding timestamped line: shown (fail visible). ---
-test_ac4_truncated_alert_continuations_shown() {
+# --- AC4 (superseded by lv8s): continuations of an old alert whose header is outside the tail window are hidden, never shown headerless. ---
+test_ac4_truncated_alert_continuations_hidden() {
   local t_old t_new x y z
   t_old="$(now_ts '90 minutes ago')"
   t_new="$(now_ts '2 minutes ago')"
@@ -234,8 +234,9 @@ $x
 $y
 $z
 "
-  assert_all_shown_in_order "ac4: orphaned leading continuation lines are shown, in order, with later alerts" \
-    "TRUNC-1" "TRUNC-2" "TRUNC-3" "$x" "$y" "$z"
+  assert_none_shown "ac4 (lv8s): orphaned continuation lines of an aged alert are hidden" \
+    "TRUNC-1" "TRUNC-2" "TRUNC-3"
+  assert_all_shown_in_order "ac4 (lv8s): later alerts still shown, in order" "$x" "$y" "$z"
 }
 
 # --- AC5: single-line alerts only: unchanged from 2do / 47q / wzg. ---
@@ -276,7 +277,7 @@ test_ac3_needs_human_still_flagged_shows_continuations
 test_ac3_needs_human_resolved_hides_continuations
 test_ac3_usage_limit_active_shows_continuations
 test_ac3_usage_limit_elapsed_hides_continuations
-test_ac4_truncated_alert_continuations_shown
+test_ac4_truncated_alert_continuations_hidden
 test_ac5_single_line_alerts_unchanged
 test_ac6_alerts_log_unmodified
 
