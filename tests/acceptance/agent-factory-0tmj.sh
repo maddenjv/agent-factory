@@ -30,16 +30,15 @@ RUN_ID="t$$"
 W=$(mktmp)
 
 # make_ctx <mode>: scratch build context = tracked tree, with dotfiles/ forced into a known state
-#   absent  - no dotfiles/ at all (fresh clone)
-#   empty   - dotfiles/ exists, no files
+#   absent  - unmodified git archive of HEAD (fresh clone: dotfiles/ holds only the tracked .gitkeep)
+#   empty   - dotfiles/ exists but is completely empty (.gitkeep removed too)
 #   full    - dotfiles/ holds .bashrc and .gitconfig
 make_ctx() {
   local d; d=$(mktmp)
   git -C "$KIT_DIR" archive HEAD | tar -x -C "$d"
-  rm -rf "$d/dotfiles"
   case "$1" in
-    empty) mkdir -p "$d/dotfiles" ;;
-    full)  mkdir -p "$d/dotfiles"
+    empty) rm -rf "$d/dotfiles"; mkdir -p "$d/dotfiles" ;;
+    full)  rm -rf "$d/dotfiles"; mkdir -p "$d/dotfiles"
            echo "# af-test-bashrc-$RUN_ID" > "$d/dotfiles/.bashrc"
            printf '[user]\n\tname = af-test-%s\n' "$RUN_ID" > "$d/dotfiles/.gitconfig" ;;
   esac
@@ -62,6 +61,17 @@ test_ac1_no_dotfiles_dir_builds() {
   local n="AC1 no dotfiles/ directory: image build succeeds"
   [ "$HAVE_DOCKER" = 1 ] || { skp "$n (no docker)"; return; }
   [ "$A_RC" = 0 ] && ok "$n" || bad "$n - $(tail -5 "$W/build-A.log")"
+}
+
+test_ac1_gitkeep_not_in_home() {
+  local n="AC1/AC3 .gitkeep placeholder does not land in the image's home dir"
+  [ "$HAVE_DOCKER" = 1 ] || { skp "$n (no docker)"; return; }
+  local s out
+  for s in A B C; do
+    out=$(in_img $s 'h=$(getent passwd "$(id -un)" | cut -d: -f6); ls -A "$h"; [ ! -e "$h/.gitkeep" ]' 2>&1) \
+      || { bad "$n - image $s has .gitkeep in home: $out"; return; }
+  done
+  ok "$n"
 }
 
 test_ac2_empty_dotfiles_dir_builds() {
@@ -112,6 +122,7 @@ test_ac5_docs_say_optional() {
 }
 
 test_ac1_no_dotfiles_dir_builds
+test_ac1_gitkeep_not_in_home
 test_ac2_empty_dotfiles_dir_builds
 test_ac3_supplied_dotfiles_in_home_owned_by_user
 test_ac4_dotfiles_never_tracked
