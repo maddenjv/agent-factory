@@ -53,6 +53,9 @@ flowchart LR
    close. After 2 rework rounds a story goes to `needs-human`.
 
 ## Setup
+**Prerequisite:** Docker with the Compose plugin (`docker compose`; the legacy standalone
+`docker-compose` binary is not supported). `bin/init.sh` checks for both up front.
+
 **Self-contained** — `docker-compose.yml` builds the `agent` image from this repo's own
 `Dockerfile` (the harness CLI - Claude Code or GitHub Copilot CLI, see "Harness" below - plus the
 beads toolchain lives there). Its container user takes the host
