@@ -59,6 +59,16 @@ remains, and records that judgment - with a reason - in `.agent-factory/control/
     `bin/start.sh`'s `run` commands pass `--env-file "$AGENT_ENV_FILE"`; the `env_file:` key on
     the `agent` service is a separate mechanism for the container's own runtime process env
     (`docs/design/agent-factory-wpq4.md`).
+  - **Extra CA certificates**: to make the `agent` image trust a private CA (TLS-intercepting
+    proxy, internal git host/registry), put PEM files named `*.crt` in `extra-ca/` (git-ignored;
+    never commit them), rebuild with `docker compose build agent`, then restart agents.
+    The `Dockerfile` validates each file, installs it with `update-ca-certificates`, and sets
+    `NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt` so `claude`/node trust it too;
+    `git`, `curl` and `bd` use the system bundle. Removing a file and rebuilding removes the
+    trust. An invalid PEM or a non-`*.crt` file fails the build with a message naming it. With
+    nothing supplied the build is unchanged. `extra-ca/.gitkeep` must stay (otherwise `COPY`
+    fails; restore with `mkdir extra-ca && touch extra-ca/.gitkeep`). Runtime injection without
+    a rebuild is out of scope.
 - **Tracker**: Beads (`bd`), Dolt-backed, shared across all five containers.
 
 ## Layout
@@ -67,6 +77,7 @@ bin/              orchestration scripts (init.sh, start.sh, stop.sh, agent-loop.
 agents/           one prompt file per role (po.md, architect.md, engineer.md, qa.md, reviewer.md)
 docker-compose.yml
 Dockerfile        the agent image (this repo owns it - see below)
+extra-ca/         operator-supplied extra CA certs (*.crt, git-ignored) baked into the agent image
 docs/stories/     PO-authored user stories, one per story id
 docs/design/      architect-authored design docs, one per story id
 docs/ARCHITECTURE.md   this file
