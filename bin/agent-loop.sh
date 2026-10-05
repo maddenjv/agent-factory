@@ -137,12 +137,17 @@ next_issue() {
   fi
   # Own/unassigned work comes from `bd ready`; an issue team-lead routed here (role:<x>) but left
   # claimed (agent-factory-zf0i) is also eligible, from `bd list` since `bd ready` hides in_progress.
-  local skip working; skip=$(claim_skip_ids); working=$(team_lead_working_id)
+  # `bd list --json` carries no per-dependency status, so open blockers come from `bd blocked --json`;
+  # if that fails, team-lead-held issues are treated as blocked for this cycle (fail closed).
+  local skip working blocked_json; skip=$(claim_skip_ids); working=$(team_lead_working_id)
+  blocked_json=$(bd blocked --json 2>>"$LOGDIR/bd-err.log") || blocked_json=null
+  blocked_json=$(printf '%s' "${blocked_json:-[]}" | bd_unwrap)
+  printf '%s' "$blocked_json" | jq -e 'type == "array"' >/dev/null 2>&1 || blocked_json=null
   { bd ready --label "role:$ROLE" --limit 50 --json 2>>"$LOGDIR/bd-err.log" | bd_unwrap
     bd list --status open,in_progress --assignee team-lead --label "role:$ROLE" --limit 200 --json 2>>"$LOGDIR/bd-err.log" | bd_unwrap
-  } | jq -rs --arg me "$AGENT_ID" --arg role "role:$ROLE" --arg skip "$skip" --arg working "$working" '
+  } | jq -rs --arg me "$AGENT_ID" --arg role "role:$ROLE" --arg skip "$skip" --arg working "$working" --argjson bl "$blocked_json" '
     def lbl: (.labels // []);
-    def blocked: (.blocked // false) or any((.dependencies // [])[]?; (.dependency_type // "blocks") == "blocks" and .status != "closed");
+    def blocked: (.blocked // false) or ($bl == null) or (.id as $i | any($bl[]?; .id == $i));
     def live_lease: ((.lease_expires_at // "") | if . == "" then false else (try (fromdateiso8601 > now) catch false) end);
     [ .[] | .[]?
       | select(lbl | index($role))
