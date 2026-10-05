@@ -5,8 +5,11 @@
 #
 # Functional: next_issue()/claim()/handle_claim_failure() are extracted from bin/agent-loop.sh (same
 # range as tests/agent-factory-rcjb_test.sh) and run against a stubbed `bd` serving a fixture for
-# `bd list`, `bd ready` and `bd show`. The stub's `bd ready` hides fixture issues flagged
-# blocked:true (as real bd does); `bd list` does not, so the code must not rely on list alone.
+# `bd list`, `bd ready`, `bd blocked` and `bd show`. Dependencies use the REAL bd shape
+# (dependencies:[{issue_id,depends_on_id,type}], no status on the dep, no "blocked" field); the stub derives
+# `bd ready` (open + unblocked only, hides in_progress like real bd) and `bd blocked` from the blocker issues
+# in the fixture (blk-open is open, blk-closed is closed; both are appended automatically).
+# The loop-owned team-lead working marker (TEAM_LEAD_WORKING_FILE) is set per run via MARKER_ID/MARKER_AGE.
 # Assumption for ac6: a running team-lead session is recognised by a live bd lease on the issue
 # (lease_expires_at in the future), as `bd show` reports for every in-progress claim.
 # Written before the implementation: ac1/ac2/ac7 are expected to FAIL today.
@@ -29,7 +32,9 @@ cat > "$TMP/bin/bd" <<'STUB'
 #!/usr/bin/env bash
 case "$1" in
   list) cat "$FIXTURE";;
-  ready) jq -c '[.[] | select((.blocked // false) | not)]' "$FIXTURE";;
+  ready) jq -c '. as $all | [.[] | select(.status == "open") | select(all((.dependencies // [])[]?; select(.type == "blocks") | .depends_on_id as $d | any($all[]; .id == $d and .status == "closed")))]' "$FIXTURE";;
+  blocked) [ -z "${FAIL_BLOCKED:-}" ] || { echo "simulated bd blocked failure" >&2; exit 1; }
+    jq -c '. as $all | [.[] | select(.status != "closed") | select(any((.dependencies // [])[]?; select(.type == "blocks") | .depends_on_id as $d | any($all[]; .id == $d and .status != "closed")))]' "$FIXTURE";;
   show) jq -c --arg id "$2" '.[] | select(.id == $id)' "$FIXTURE";;
   update) echo "$*" >> "$BDLOG"; [ -z "${FAIL_UPDATE:-}" ] || { echo "simulated bd failure" >&2; exit 1; };;
 esac
@@ -37,29 +42,40 @@ exit 0
 STUB
 chmod +x "$TMP/bin/bd"
 
-# issue ID STATUS ASSIGNEE LABELS_CSV [blocked|live] -> one bd-shaped JSON object
+# issue ID STATUS ASSIGNEE LABELS_CSV [blocked|closeddep|live] -> one bd-shaped JSON object.
+# blocked: blocks-dep on open blk-open; closeddep: blocks-dep on closed blk-closed (real dep shape).
 issue() {
   local extra=${5:-}
   jq -n --arg id "$1" --arg st "$2" --arg a "$3" --arg l "$4" --arg x "$extra" \
     --arg exp "$(date -u -d '+5 minutes' +%FT%TZ)" --arg now "$(date -u +%FT%TZ)" \
     '{id:$id, status:$st, assignee:$a, labels:($l|split(","))}
-     + (if $x == "blocked" then {blocked:true, dependency_count:1} else {} end)
+     + (if $x == "blocked" then {dependencies:[{issue_id:$id, depends_on_id:"blk-open", type:"blocks"}], dependency_count:1} else {} end)
+     + (if $x == "closeddep" then {dependencies:[{issue_id:$id, depends_on_id:"blk-closed", type:"blocks"}], dependency_count:1} else {} end)
      + (if $x == "live" then {lease_expires_at:$exp, heartbeat_at:$now} else {} end)'
+}
+# Fixture = stdin issues + the two blocker issues.
+fixture_from_stdin() { { cat; issue blk-open open "" "role:none"; issue blk-closed closed "" "role:none"; } | jq -s .; }
+marker_env() {  # marker_env DIR: points TEAM_LEAD_WORKING_FILE at DIR/working; writes it when MARKER_ID is set
+  export TEAM_LEAD_WORKING_FILE="$1/working"; rm -f "$TEAM_LEAD_WORKING_FILE"
+  if [ -n "${MARKER_ID:-}" ]; then
+    echo "$MARKER_ID" > "$TEAM_LEAD_WORKING_FILE"
+    [ -z "${MARKER_AGE:-}" ] || touch -d "$MARKER_AGE" "$TEAM_LEAD_WORKING_FILE"
+  fi
 }
 
 run_next_issue() {  # run_next_issue ROLE < fixture-issues
   local role=$1 fixture="$TMP/f.$RANDOM.json" w="$TMP/log.$RANDOM"; mkdir -p "$w"
-  jq -s . > "$fixture"
-  FIXTURE="$fixture" PATH="$TMP/bin:$PATH" AGENT_ID="$role" ROLE="$role" LOGDIR="$w" \
+  fixture_from_stdin > "$fixture"; marker_env "$w"
+  FIXTURE="$fixture" PATH="$TMP/bin:$PATH" AGENT_ID="$role" ROLE="$role" LOGDIR="$w" ITERATION_TIMEOUT=45m \
     bash -c 'source "$1"; next_issue' _ "$FNS"
 }
 
 # run_fn ROLE FUNCTION ID < fixture-issues: prints "rc=N" then every `bd update` call made.
 run_fn() {
   local role=$1 fn=$2 id=$3 fixture="$TMP/f.$RANDOM.json" w="$TMP/log.$RANDOM"; mkdir -p "$w"
-  jq -s . > "$fixture"
+  fixture_from_stdin > "$fixture"; marker_env "$w"
   local bdlog="$w/bd.log"; : > "$bdlog"
-  FIXTURE="$fixture" BDLOG="$bdlog" PATH="$TMP/bin:$PATH" AGENT_ID="$role" ROLE="$role" LOGDIR="$w" \
+  ITERATION_TIMEOUT=45m FIXTURE="$fixture" BDLOG="$bdlog" PATH="$TMP/bin:$PATH" AGENT_ID="$role" ROLE="$role" LOGDIR="$w" \
     CONTROL="$w" STATE="$w" bash -c 'source "$1"; '"$fn"' "$2"; echo "rc=$?"' _ "$FNS" "$id" 2>/dev/null
   cat "$bdlog"
 }
@@ -194,6 +210,85 @@ test_ac7_failed_takeover_is_logged_and_skipped() {
   grep -q 'could not claim z1' "$w/loop.log" || { fail "ac7: failed takeover was not logged - $(cat "$w/loop.log" 2>&1)"; return; }
   grep -q '^second=$' <<<"$out" || { fail "ac7: failed takeover retried immediately (not skipped) - got: $out"; return; }
   pass "ac7: failed takeover is logged and the issue skipped for the backoff window"
+}
+
+test_ac1_ac5_real_dependency_shape() {
+  local r got
+  for r in po engineer; do
+    got=$(issue d-$r in_progress team-lead "role:$r" closeddep | run_next_issue $r)
+    [ "$got" = "d-$r" ] || { fail "ac1: $r did not select team-lead-held issue whose only blocker is closed (real dep shape) - got '$got'"; return; }
+    got=$(issue d-$r in_progress team-lead "role:$r" blocked | run_next_issue $r)
+    [ -z "$got" ] || { fail "ac5: $r selected team-lead-held issue with an OPEN blocker (real dep shape) - got '$got'"; return; }
+  done
+  got=$(issue d1 open team-lead "role:qa" closeddep | run_next_issue qa)
+  [ "$got" = d1 ] || { fail "ac1: open team-lead-assigned issue with closed blocker not selected - got '$got'"; return; }
+  got=$(issue d2 open team-lead "role:qa" blocked | run_next_issue qa)
+  [ -z "$got" ] || { fail "ac5: open team-lead-assigned issue with open blocker selected - got '$got'"; return; }
+  got=$( { issue d3 in_progress team-lead "role:qa" blocked; issue d4 in_progress team-lead "role:qa" closeddep; } | run_next_issue qa)
+  [ "$got" = d4 ] || { fail "ac5: expected only the closed-blocker sibling d4 - got '$got'"; return; }
+  pass "ac1/ac5: closed blocker (real dep shape) -> selected; open blocker -> not selected"
+}
+
+test_ac6_marker_names_issue_not_taken() {
+  local r got out
+  for r in po qa; do
+    got=$(export MARKER_ID=m-$r; issue m-$r in_progress team-lead "role:$r" | run_next_issue $r)
+    [ -z "$got" ] || { fail "ac6: $r selected the issue team-lead's loop is running (marker) - got '$got'"; return; }
+    got=$(export MARKER_ID=m-$r; issue m-$r open team-lead "role:$r" | run_next_issue $r)
+    [ -z "$got" ] || { fail "ac6: $r selected open marker-named issue - got '$got'"; return; }
+  done
+  out=$(export MARKER_ID=m1; issue m1 in_progress team-lead "role:qa" | run_fn qa claim m1)
+  { grep -q '^rc=1$' <<<"$out" && no_update "$out"; } \
+    || { fail "ac6: claim() took over the issue named by the working marker - got: $out"; return; }
+  pass "ac6: marker naming the issue => not selected and claim returns 1 with no update"
+}
+
+test_ac6_marker_other_absent_or_stale_does_not_block() {
+  local got out
+  got=$(export MARKER_ID=other; issue n1 in_progress team-lead "role:qa" | run_next_issue qa)
+  [ "$got" = n1 ] || { fail "ac6: marker naming a different issue blocked n1 - got '$got'"; return; }
+  out=$(export MARKER_ID=other; issue n1 in_progress team-lead "role:qa" | run_fn qa claim n1)
+  grep -q '^rc=0$' <<<"$out" || { fail "ac6: claim refused with marker naming a different issue - $out"; return; }
+  got=$(issue n2 in_progress team-lead "role:qa" | run_next_issue qa)
+  [ "$got" = n2 ] || { fail "ac6: absent marker blocked selection - got '$got'"; return; }
+  # stale: older than ITERATION_TIMEOUT (45m) + 300s => ignored; fresh => honoured
+  got=$(export MARKER_ID=n3 MARKER_AGE='-3 hours'; issue n3 in_progress team-lead "role:qa" | run_next_issue qa)
+  [ "$got" = n3 ] || { fail "ac6: stale marker (3h > timeout+300s) still blocked selection - got '$got'"; return; }
+  out=$(export MARKER_ID=n3 MARKER_AGE='-3 hours'; issue n3 in_progress team-lead "role:qa" | run_fn qa claim n3)
+  grep -q '^rc=0$' <<<"$out" || { fail "ac6: claim refused because of a stale marker - $out"; return; }
+  got=$(export MARKER_ID=n4 MARKER_AGE='-1 minute'; issue n4 in_progress team-lead "role:qa" | run_next_issue qa)
+  [ -z "$got" ] || { fail "ac6: fresh marker (1m old) not honoured - got '$got'"; return; }
+  got=$( { issue n5 in_progress team-lead "role:qa"; issue n6 in_progress team-lead "role:qa"; } | (export MARKER_ID=n5; run_next_issue qa))
+  [ "$got" = n6 ] || { fail "ac6: marker on n5 should leave sibling n6 selectable - got '$got'"; return; }
+  pass "ac6: marker naming another id / absent / stale does not block; fresh marker does; only the named issue is protected"
+}
+
+test_marker_plumbing_mark_clear_release_stale() {
+  local w="$TMP/log.plumb" f out
+  mkdir -p "$w"; f="$w/tl/working"
+  out=$(TEAM_LEAD_WORKING_FILE="$f" bash -c 'source "$1"; mark_working abc-1; cat "$TEAM_LEAD_WORKING_FILE"; team_lead_working_id' _ "$FNS" 2>&1)
+  [ "$out" = "$(printf 'abc-1\nabc-1')" ] || { fail "plumbing: mark_working/team_lead_working_id round trip - got '$out'"; return; }
+  TEAM_LEAD_WORKING_FILE="$f" bash -c 'source "$1"; clear_working' _ "$FNS"
+  [ ! -e "$f" ] || { fail "plumbing: clear_working left the marker file"; return; }
+  TEAM_LEAD_WORKING_FILE= CONTROL="$w/ctl" bash -c 'source "$1"; mark_working def-1' _ "$FNS"
+  [ "$(cat "$w/ctl/state/team-lead/working" 2>/dev/null)" = def-1 ] \
+    || { fail "plumbing: default marker path is not \$CONTROL/state/team-lead/working"; return; }
+  echo "[]" > "$w/fix.json"; mkdir -p "$(dirname "$f")"; echo stale-1 > "$f"
+  FIXTURE="$w/fix.json" PATH="$TMP/bin:$PATH" TEAM_LEAD_WORKING_FILE="$f" AGENT_ID=team-lead ROLE=team-lead LOGDIR="$w" \
+    bash -c 'source "$1"; release_stale' _ "$FNS" >/dev/null 2>&1
+  [ ! -e "$f" ] || { fail "plumbing: release_stale did not clear team-lead's working marker"; return; }
+  echo stale-2 > "$f"
+  FIXTURE="$w/fix.json" PATH="$TMP/bin:$PATH" TEAM_LEAD_WORKING_FILE="$f" AGENT_ID=qa ROLE=qa LOGDIR="$w" \
+    bash -c 'source "$1"; release_stale' _ "$FNS" >/dev/null 2>&1
+  [ -e "$f" ] || { fail "plumbing: a non-team-lead release_stale must not clear team-lead's marker"; return; }
+  pass "plumbing: mark_working/clear_working write/remove the marker; release_stale clears it (team-lead only)"
+}
+
+test_marker_wired_into_main_loop() {
+  local m c
+  m=$(grep -c 'mark_working "\$id"' bin/agent-loop.sh); c=$(grep -c 'clear_working' bin/agent-loop.sh)
+  { [ "$m" -ge 1 ] && [ "$c" -ge 3 ]; } || { fail "plumbing: main loop must mark_working after claim and clear_working after the session and early exits (mark=$m clear=$c)"; return; }
+  pass "plumbing: main loop calls mark_working after claim and clear_working after the session/early exits"
 }
 
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do "$t"; done
