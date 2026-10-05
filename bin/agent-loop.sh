@@ -297,7 +297,7 @@ run_harness_session() {  # run_harness_session LOGNAME PROMPT -> sets LAST_RUN_Q
   errfile=$(mktemp); outfile=$(mktemp)
   if [ "$HARNESS" = "copilot" ]; then
     logfile="$LOGDIR/$(date +%F).$logname.log"   # plain text, not stream-json - see README
-    local args=(-p "$prompt" --allow-all-tools --no-ask-user -s)
+    local args=(-p "$prompt" --allow-all-tools --no-ask-user -s --add-dir "$KIT_DIR")
     [ -n "$MODEL" ] && args+=(--model "$MODEL")
     ( cd "$REPO" && timeout "$ITERATION_TIMEOUT" copilot "${args[@]}" 2>"$errfile" ) \
       | tee -a "$logfile" "$outfile"
