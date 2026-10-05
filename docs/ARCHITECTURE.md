@@ -43,7 +43,7 @@ remains, and records that judgment - with a reason - in `.agent-factory/control/
     bookworm base, matching the `node:22-bookworm-slim` family already used for the Claude Code
     CLI). Contains either `claude` (`@anthropic-ai/claude-code`, npm) or `copilot`
     (`@github/copilot`, npm) - chosen at build time by the `HARNESS` build arg
-    (`bin/init.sh --harness=<claude-code|copilot>`, default `claude-code`; see README) - plus
+    (`bin/init.sh --harness=<claude-code|copilot>`, default `claude-code`; see README; under copilot `agent-loop.sh` also passes `--add-dir "$KIT_DIR"` so agents can read/run kit scripts outside their clone) - plus
     `bd`/`beads`
     (`github.com/steveyegge/beads/cmd/bd`, go install, copied out of a throwaway builder stage),
     `git`, `jq`, `curl`, `shellcheck`, `bash`. The `Dockerfile` creates the account from the host user: name, UID and
