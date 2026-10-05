@@ -104,6 +104,20 @@ is_ready()    { bd ready --limit 200 --json 2>/dev/null | bd_unwrap | jq -e --ar
 # (AGENT_ID may carry a suffix, e.g. engineer-2) as that stale claim. Any other assignee is left alone.
 BUILD_ROLE_RE='^(po|architect|engineer|qa|reviewer)([-_.].*)?$'
 
+# Loop-owned marker naming the issue team-lead's loop is running a session on right now, so a role
+# does not take it over while team-lead is still working (the loop never heartbeats bd's lease).
+# Ignored once older than ITERATION_TIMEOUT + 300s (a crashed team-lead loop never cleared it).
+team_lead_working_file() { echo "${TEAM_LEAD_WORKING_FILE:-${CONTROL:-}/state/team-lead/working}"; }
+mark_working()  { mkdir -p "$(dirname "$(team_lead_working_file)")" 2>/dev/null; echo "$1" > "$(team_lead_working_file)"; }
+clear_working() { rm -f "$(team_lead_working_file)"; }
+team_lead_working_id() {
+  local f t n; f=$(team_lead_working_file); [ -s "$f" ] || return 0
+  t="${ITERATION_TIMEOUT:-45m}"
+  case "$t" in *h) n=$(( ${t%h} * 3600 ));; *m) n=$(( ${t%m} * 60 ));; *s) n=${t%s};; *) n=$t;; esac
+  [ $(( $(date +%s) - $(stat -c %Y "$f" 2>/dev/null || echo 0) )) -le $(( n + 300 )) ] && head -n1 "$f"
+  return 0
+}
+
 next_issue() {
   if [ "$ROLE" = "team-lead" ]; then
     local skip; skip=$(claim_skip_ids)
@@ -121,11 +135,22 @@ next_issue() {
       | .[0].id // empty' 2>/dev/null
     return
   fi
-  bd ready --label "role:$ROLE" --limit 50 --json 2>>"$LOGDIR/bd-err.log" | bd_unwrap | jq -r --arg me "$AGENT_ID" '
-    [ .[]?
-      | select(((.labels // []) | (index("needs-human") != null or index("needs-team-lead") != null)) | not)
-      | select(((.assignee // "") == "") or (.assignee == $me)) ]
-    | .[0].id // empty' 2>/dev/null
+  # Own/unassigned work comes from `bd ready`; an issue team-lead routed here (role:<x>) but left
+  # claimed (agent-factory-zf0i) is also eligible, from `bd list` since `bd ready` hides in_progress.
+  local skip working; skip=$(claim_skip_ids); working=$(team_lead_working_id)
+  { bd ready --label "role:$ROLE" --limit 50 --json 2>>"$LOGDIR/bd-err.log" | bd_unwrap
+    bd list --status open,in_progress --assignee team-lead --label "role:$ROLE" --limit 200 --json 2>>"$LOGDIR/bd-err.log" | bd_unwrap
+  } | jq -rs --arg me "$AGENT_ID" --arg role "role:$ROLE" --arg skip "$skip" --arg working "$working" '
+    def lbl: (.labels // []);
+    def blocked: (.blocked // false) or any((.dependencies // [])[]?; (.dependency_type // "blocks") == "blocks" and .status != "closed");
+    def live_lease: ((.lease_expires_at // "") | if . == "" then false else (try (fromdateiso8601 > now) catch false) end);
+    [ .[] | .[]?
+      | select(lbl | index($role))
+      | select((lbl | (index("needs-human") != null or index("needs-team-lead") != null or index("needs-chain") != null)) | not)
+      | select(.id as $i | ($skip | split(" ") | index($i)) | not)
+      | select(((.assignee // "") == "") or (.assignee == $me)
+               or (.assignee == "team-lead" and .id != $working and (blocked | not) and (live_lease | not))) ]
+    | unique_by(.id) | .[0].id // empty' 2>/dev/null
 }
 
 claim() {  # atomic claim when unassigned; resume if it was already ours
@@ -140,10 +165,19 @@ claim() {  # atomic claim when unassigned; resume if it was already ours
     # do the compare-and-swap by hand: re-read the assignee right before the forced update.
     [ "$(issue_field "$id" assignee)" = "$who" ] \
       && bd update "$id" --assignee "$AGENT_ID" --status in_progress --force >/dev/null 2>"$CLAIM_ERR"
+  elif [ "$who" = team-lead ] && [ "$ROLE" != team-lead ] && has_label "$id" "role:$ROLE" \
+       && ! has_label "$id" needs-team-lead && ! has_label "$id" needs-chain && ! has_label "$id" needs-human \
+       && [ "$(team_lead_working_id)" != "$id" ] \
+       && ! show_json "$id" | jq -e '(.lease_expires_at // "") as $l | $l != "" and (try ($l | fromdateiso8601 > now) catch false)' >/dev/null 2>&1; then
+    # take over team-lead's leftover claim on an issue routed to this role (agent-factory-zf0i): same
+    # hand-rolled compare-and-swap as above, since --force excludes --if-assignee.
+    [ "$(issue_field "$id" assignee)" = team-lead ] \
+      && bd update "$id" --assignee "$AGENT_ID" --status in_progress --force >/dev/null 2>"$CLAIM_ERR"
   else return 1; fi
 }
 
 release_stale() {  # anything still in_progress under our name at startup is left over from a crash
+  [ "$ROLE" = team-lead ] && clear_working
   bd list --json 2>/dev/null \
     | bd_unwrap \
     | jq -r --arg me "$AGENT_ID" '.[]? | select(.status=="in_progress" and (.assignee // "")==$me) | .id' \
@@ -486,7 +520,9 @@ while :; do
     if [ "$ROLE" = "team-lead" ]; then sleep 1; else sleep 5; fi
     continue
   fi
+  [ "$ROLE" = team-lead ] && mark_working "$id"
   if ! sync_repo; then
+    [ "$ROLE" = team-lead ] && clear_working
     log "git sync failed; releasing $id"; bd update "$id" --status open >/dev/null 2>&1
     fails=$((fails+1))
     if [ "$fails" -ge "$MAX_CONSECUTIVE_FAILURES" ]; then alert "circuit breaker: git sync failing; stopping"; exit 2; fi
@@ -495,6 +531,7 @@ while :; do
 
   log "START $id: $(issue_field "$id" title)"
   run_agent "$id"
+  [ "$ROLE" = team-lead ] && clear_working
 
   if [ -n "$LAST_RUN_QUOTA_MSG" ]; then
     wait_s=$(usage_limit_wait_seconds "$LAST_RUN_QUOTA_MSG")
