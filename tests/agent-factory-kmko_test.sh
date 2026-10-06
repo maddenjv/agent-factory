@@ -69,7 +69,7 @@ run_init() {
 
 snapshot_config() {  # host-visible git config state
   { cat "$W/home/.gitconfig" 2>/dev/null; echo ---; cat "$W/home/.config/git/config" 2>/dev/null
-    echo ---; cat "$W/proj/.git/config"; } | grep -v 'receive.denyCurrentBranch\|denycurrentbranch\|updateInstead'
+    echo ---; cat "$W/proj/.git/config"; } | grep -v '^\[receive\]$\|receive.denyCurrentBranch\|denycurrentbranch\|updateInstead'
 }
 scaffold_commit_subject() { git -C "$W/proj" log -1 --format=%s main 2>/dev/null; }
 
@@ -102,7 +102,7 @@ test_ac2_no_identity_written_to_any_config() {
   local after; after=$(snapshot_config)
   local leaked=""
   for scope in global system local; do
-    git -C "$W/proj" config --$scope --get-regexp '^user\.(name|email)$' >/dev/null 2>&1 \
+    HOME="$W/home" GIT_CONFIG_NOSYSTEM=1 git -C "$W/proj" config --$scope --get-regexp '^user\.(name|email)$' >/dev/null 2>&1 \
       && leaked="$leaked $scope"
   done
   HOME="$W/home" GIT_CONFIG_NOSYSTEM=1 git -C "$W/proj" config --get user.name >/dev/null 2>&1 && leaked="$leaked effective-name"
@@ -172,9 +172,10 @@ test_ac4_partial_identity_not_written_to_config() {
   git config --file "$W/home/.gitconfig" user.name "Only Name"
   local before; before=$(snapshot_config)
   run_init
-  [ "$status" -eq 0 ] && [ "$before" = "$(snapshot_config)" ] \
+  local after; after=$(snapshot_config)
+  [ "$status" -eq 0 ] && [ "$before" = "$after" ] \
     && pass "ac4: partial identity: config unchanged" \
-    || fail "ac4: partial identity: exit $status or config changed; output: $out"
+    || fail "ac4: partial identity: exit $status or config changed; before: $before / after: $after"
 }
 
 test_ac5_rerun_succeeds_and_reports_already_present() {
