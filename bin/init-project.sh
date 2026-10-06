@@ -7,6 +7,12 @@ PROJECT_DIR="${PROJECT_DIR:?PROJECT_DIR must be set}"
 # shellcheck disable=SC1091
 source "$KIT_DIR/bin/env.sh"   # BEADS_DOLT_SERVER_HOST=dolt etc - every bd call below needs it
 cd "$PROJECT_DIR"
+# Identity comes from bin/init.sh (host's own, or a factory default). Defaults here only cover a
+# direct invocation; env vars, never `git config`, so nothing is persisted.
+export GIT_AUTHOR_NAME="${GIT_AUTHOR_NAME:-agent-factory}"
+export GIT_AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-agent-factory@factory.local}"
+export GIT_COMMITTER_NAME="${GIT_COMMITTER_NAME:-$GIT_AUTHOR_NAME}"
+export GIT_COMMITTER_EMAIL="${GIT_COMMITTER_EMAIL:-$GIT_AUTHOR_EMAIL}"
 git config --global --add safe.directory '*' 2>/dev/null || true
 
 branch=$(git symbolic-ref --short -q HEAD || true)
