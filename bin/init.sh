@@ -99,6 +99,18 @@ for _ in $(seq 30); do
   sleep 2
 done
 
-dc run --rm --entrypoint bash agent "$KIT_DIR/bin/init-project.sh"
+# Identity for init-project.sh's scaffolding commit. The container can't see your ~/.gitconfig,
+# so resolve it here (git's own lookup, all levels, from PROJECT_DIR) and pass it in as env vars
+# - which, unlike `git config`, never write anything to your git configuration. Each half falls
+# back on its own, so having only user.name or only user.email set still works.
+git_name=$(git -C "$PROJECT_DIR" config user.name 2>/dev/null || true)
+git_email=$(git -C "$PROJECT_DIR" config user.email 2>/dev/null || true)
+git_name=${git_name:-${GIT_AUTHOR_NAME:-agent-factory}}
+git_email=${git_email:-${GIT_AUTHOR_EMAIL:-agent-factory@factory.local}}
+
+dc run --rm \
+  -e GIT_AUTHOR_NAME="$git_name" -e GIT_AUTHOR_EMAIL="$git_email" \
+  -e GIT_COMMITTER_NAME="$git_name" -e GIT_COMMITTER_EMAIL="$git_email" \
+  --entrypoint bash agent "$KIT_DIR/bin/init-project.sh"
 echo
 echo "Done. Next: $KIT_DIR/bin/start.sh"
