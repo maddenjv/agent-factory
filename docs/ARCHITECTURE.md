@@ -106,6 +106,12 @@ fix work" for the mechanics an agent follows, and `agents/reviewer.md` for how e
   new design decision and no new test): a `fix/<issue-id>` branch cut directly from `main`,
   reviewed and merged by the reviewer the same way as a story review - same bar, scaled to the
   size of the change - but skipping the tests/implement/verify stages entirely.
+- **Pre-review conflict gate** (`agent-factory-4yvo`): before the reviewer loop claims a `stage:review`
+  issue (story or `fix/`), `bin/conflict-check.sh` runs `git merge-tree --write-tree` of `origin/<branch>`
+  into `origin/main` (no worktree, no push). A real conflict files a `merge-conflict` `stage:rework` issue
+  (engineer, or qa if every conflicting file is a test) that the review issue depends on; a branch that is
+  merely behind is untouched; any failure to check is logged and ignored. The reviewer's merge-time
+  conflict flow stays as the backstop.
 
 ## Conventions
 - Scripts are POSIX-ish bash, `set -euo pipefail` (or the narrower `set -uo pipefail` where a

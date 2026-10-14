@@ -169,6 +169,14 @@ next_issue() {
     | unique_by(.id) | .[0].id // empty' 2>/dev/null
 }
 
+precheck_review() {  # reviewer only: 0 = proceed to claim, 1 = held back on a conflict rework just filed/found
+  [ "$ROLE" = reviewer ] || return 0
+  local rc=0 out
+  out=$(REPO="$REPO" "$KIT_DIR/bin/conflict-check.sh" "$1" 2>&1) || rc=$?
+  [ -z "$out" ] || log "$out"
+  case "$rc" in 0) return 0;; 10) return 1;; *) log "pre-review check failed for $1 (rc=$rc); proceeding"; return 0;; esac
+}
+
 claim() {  # atomic claim when unassigned; resume if it was already ours
   local id=$1 who
   CLAIM_ERR="${LOGDIR:-/tmp}/claim-err.log"; : > "$CLAIM_ERR"
@@ -558,6 +566,7 @@ while :; do
   fi
   idle_logged=0
 
+  if ! precheck_review "$id"; then log "$id held back: merge conflict rework filed"; sleep 1; continue; fi
   if ! claim "$id"; then
     handle_claim_failure "$id"
     if [ "$ROLE" = "team-lead" ]; then sleep 1; else sleep 5; fi
