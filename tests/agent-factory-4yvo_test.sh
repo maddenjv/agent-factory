@@ -268,7 +268,7 @@ test_ac3_main_moving_again_repeats_detection() {
   if ! claimed rv-s-clean; then ORIGIN="$saved"; fail "ac3: precondition failed - clean story's review was not claimed. $(dump)"; return; fi
   # main moves again, conflicting with the story's new.txt; the review issue is re-opened for another pass
   in_clone main "echo 'main version' > new.txt && $GIT add new.txt && $GIT commit -q -m main-adds-new-txt && $GIT push -q origin main"
-  jq -c 'map(if .id=="rv-s-clean" then .status="open" else . end)' "$W/issues.json" > "$W/i.tmp" && mv "$W/i.tmp" "$W/issues.json"
+  jq -c 'map(if .id=="rv-s-clean" then .status="open" | .assignee="" | .labels|=map(select(.!="needs-team-lead")) else . end)' "$W/issues.json" > "$W/i.tmp" && mv "$W/i.tmp" "$W/issues.json"
   : > "$W/bdlog"
   run_loop 7
   ORIGIN="$saved"
