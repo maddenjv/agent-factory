@@ -70,10 +70,21 @@ source "$KIT_DIR/bin/bdjson.sh"
 
 # ---------- logging / alerting ----------
 log() { printf '%s [%s] %s\n' "$(date -u +%FT%TZ)" "$AGENT_ID" "$*" | tee -a "$LOGDIR/loop.log"; }
+one_line() {  # one_line TEXT... -> TEXT as one line: each CRLF/LF/CR run (and blank lines between) becomes
+              # one space, no leading/trailing space. Text without a line break is returned unchanged.
+  local msg="$*"
+  case $msg in
+    *$'\n'*|*$'\r'*)
+      printf '%s' "$msg" | tr '\r' '\n' \
+        | awk 'NF{ sub(/^[ \t]+/,""); sub(/[ \t]+$/,""); out = out (out==""?"":" ") $0 } END{printf "%s", out}' ;;
+    *) printf '%s' "$msg" ;;
+  esac
+}
 alert() {
-  printf '%s [%s] %s\n' "$(date -u +%FT%TZ)" "$AGENT_ID" "$*" >> "$CONTROL/alerts.log"
-  log "ALERT: $*"
-  if [ -n "${NOTIFY_URL:-}" ]; then curl -fsS -m 10 -d "[$AGENT_ID] $*" "$NOTIFY_URL" >/dev/null 2>&1 || true; fi
+  local msg; msg=$(one_line "$*")
+  printf '%s [%s] %s\n' "$(date -u +%FT%TZ)" "$AGENT_ID" "$msg" >> "$CONTROL/alerts.log"
+  log "ALERT: $msg"
+  if [ -n "${NOTIFY_URL:-}" ]; then curl -fsS -m 10 -d "[$AGENT_ID] $msg" "$NOTIFY_URL" >/dev/null 2>&1 || true; fi
 }
 
 # A claim that fails must not wedge the loop on the same issue: remember it ("id:epoch" entries)
@@ -329,17 +340,42 @@ build_throttle_prompt() {
   printf '\n\n---\nNo bd issue this session: assess the po/architect throttle now (see "Assess the po/architect throttle" above), then record it with bin/set-throttle.sh - that is the only place this decision is recorded, so do not skip it.\nRepository: %s (your own clone; remote "origin"). Shared conventions are in CLAUDE.md. KIT_DIR=%s PROJECT_DIR=%s\n' "$REPO" "$KIT_DIR" "$PROJECT_DIR"
 }
 
+harness_error_excerpt() {  # harness_error_excerpt ERRFILE OUTFILE -> <=200-char single-line error text, or empty
+  local e
+  e=$(one_line "$(head -c 2000 "$1" 2>/dev/null)" | cut -c1-200)
+  if [ -z "$e" ] && [ "$HARNESS" != "copilot" ]; then
+    e=$(jq -Rn -r '[inputs | fromjson? | select(type=="object")] | map(select(.type=="result")) | last
+                   | select(.is_error == true) | .result // empty' "$2" 2>/dev/null | head -c 2000)
+    e=$(one_line "$e" | cut -c1-200)
+  fi
+  printf '%s' "$e"
+}
+
+failure_cause() {  # -> why the last harness session failed, from LAST_RUN_RC / LAST_RUN_ERR
+  local rc=${LAST_RUN_RC:-0} c
+  if [ "$rc" != 0 ]; then
+    c="harness exit status $rc"; [ "$rc" = 124 ] && c="$c (timeout)"
+  else
+    c="session ended without closing or explaining"
+  fi
+  [ -n "${LAST_RUN_ERR:-}" ] && c="$c: $LAST_RUN_ERR"
+  printf '%s' "$c"
+}
+
 run_harness_session() {  # run_harness_session LOGNAME PROMPT -> sets LAST_RUN_QUOTA_MSG (empty
-                         # unless this run hit a usage limit); shared by run_agent() (one bd issue)
+                         # unless this run hit a usage limit), LAST_RUN_RC (harness exit status) and
+                         # LAST_RUN_ERR (error excerpt); shared by run_agent() (one bd issue)
                          # and run_throttle_assessment() (no bd issue).
   local logname=$1 prompt=$2 logfile errfile outfile cost
   errfile=$(mktemp); outfile=$(mktemp)
+  LAST_RUN_RC=0; LAST_RUN_ERR=""
   if [ "$HARNESS" = "copilot" ]; then
     logfile="$LOGDIR/$(date +%F).$logname.log"   # plain text, not stream-json - see README
     local args=(-p "$prompt" --allow-all-tools --no-ask-user -s --add-dir "$KIT_DIR")
     [ -n "$MODEL" ] && args+=(--model "$MODEL")
     ( cd "$REPO" && timeout "$ITERATION_TIMEOUT" copilot "${args[@]}" 2>"$errfile" ) \
       | tee -a "$logfile" "$outfile"
+    LAST_RUN_RC=${PIPESTATUS[0]}
     cost=0   # Copilot CLI reports no per-session USD figure - see README "Guardrails built in"
     LAST_RUN_QUOTA_MSG=$(quota_hit_message "$errfile")
   else
@@ -349,10 +385,12 @@ run_harness_session() {  # run_harness_session LOGNAME PROMPT -> sets LAST_RUN_Q
     [ -n "$MODEL" ] && args+=(--model "$MODEL")
     ( cd "$REPO" && timeout "$ITERATION_TIMEOUT" claude "${args[@]}" 2>"$errfile" ) \
       | tee -a "$logfile" "$outfile" | jq -R -r --unbuffered "$RENDER" 2>/dev/null
+    LAST_RUN_RC=${PIPESTATUS[0]}
     cost=$(jq -rs '[.[] | select(.type=="result")] | last | .total_cost_usd // 0' "$logfile" 2>/dev/null)
     LAST_RUN_QUOTA_MSG=$(quota_hit_message "$errfile")   # stderr, else this run's final error result
     [ -n "$LAST_RUN_QUOTA_MSG" ] || LAST_RUN_QUOTA_MSG=$(quota_hit_from_stream "$outfile")
   fi
+  LAST_RUN_ERR=$(harness_error_excerpt "$errfile" "$outfile")
   echo "${cost:-0}" >> "$CONTROL/cost/$ROLE.$(date +%F)"
   cat "$errfile" >> "$LOGDIR/claude-err.log"
   rm -f "$errfile" "$outfile"
@@ -408,7 +446,7 @@ record_failure() {
     esc_label="needs-team-lead"; [ "$ROLE" = "team-lead" ] && esc_label="needs-human"
     bd update "$id" --append-notes "agent-loop: not completed after $n attempt(s) by $AGENT_ID (session ended without closing or explaining why). Transcript: $LOGDIR/$(date +%F).$id.jsonl" >/dev/null 2>&1
     bd label add "$id" "$esc_label" >/dev/null 2>&1
-    alert "$id not completed after $n attempts; labelled $esc_label"
+    alert "$id not completed after $n attempts; labelled $esc_label ($(failure_cause))"
     if is_conflict_rework "$id"; then restart_story "$id" attempt-cap; fi
   else
     log "$id not completed (attempt $n/$MAX_ATTEMPTS_PER_ISSUE); released for retry"
