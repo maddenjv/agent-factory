@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+TS_A="2026-09-28T00:00:00Z" # fixed-date-ok
+TS_B="2026-09-28T00:05:00Z" # fixed-date-ok
 # Acceptance tests for agent-factory-q4tj: team-lead decides when po and architect go idle, not a
 # fixed WIP heuristic. One function per acceptance criterion in
 # docs/stories/agent-factory-q4tj.md (test_acN_...).
@@ -165,11 +167,11 @@ throttle_ok_as() {  # throttle_ok_as ROLE FIXTURE_JSON_OR_MISSING -> exit status
 test_ac1_ac2_throttle_ok_gates_only_po_and_architect_on_idle_true() {
   local ok=1
   for role in po architect; do
-    throttle_ok_as "$role" '{"idle":true,"reason":"backlog deep","assessed_at":"2026-09-28T00:00:00Z"}' \
+    throttle_ok_as "$role" '{"idle":true,"reason":"backlog deep","assessed_at":"'"$TS_A"'"}' \
       && { fail "ac1/ac2: throttle_ok true for $role despite idle:true"; ok=0; }
   done
   for role in engineer qa reviewer team-lead; do
-    throttle_ok_as "$role" '{"idle":true,"reason":"backlog deep","assessed_at":"2026-09-28T00:00:00Z"}' \
+    throttle_ok_as "$role" '{"idle":true,"reason":"backlog deep","assessed_at":"'"$TS_A"'"}' \
       || { fail "ac2: throttle_ok false for $role - only po/architect may ever be idled by this policy"; ok=0; }
   done
   [ "$ok" = 1 ] && pass "ac1/ac2: throttle_ok() blocks only po/architect on idle:true; engineer/qa/reviewer/team-lead always proceed"
@@ -177,7 +179,7 @@ test_ac1_ac2_throttle_ok_gates_only_po_and_architect_on_idle_true() {
 
 test_ac1_throttle_ok_lets_po_and_architect_proceed_on_idle_false_or_missing_file() {
   local ok=1
-  for fixture in '{"idle":false,"reason":"room","assessed_at":"2026-09-28T00:00:00Z"}' MISSING; do
+  for fixture in '{"idle":false,"reason":"room","assessed_at":"'"$TS_A"'"}' MISSING; do # fixed-date-ok
     for role in po architect; do
       throttle_ok_as "$role" "$fixture" \
         || { fail "ac1: throttle_ok false for $role with fixture '$fixture' - should proceed (idle:false, or fail-open on missing file)"; ok=0; }
@@ -187,9 +189,9 @@ test_ac1_throttle_ok_lets_po_and_architect_proceed_on_idle_false_or_missing_file
 }
 
 test_ac6_throttle_ok_reflects_latest_assessment_not_a_onetime_snapshot() {
-  throttle_ok_as po '{"idle":true,"reason":"deep","assessed_at":"2026-09-28T00:00:00Z"}' \
+  throttle_ok_as po '{"idle":true,"reason":"deep","assessed_at":"'"$TS_A"'"}' \
     && { fail "ac6: throttle_ok true for po right after recording idle:true"; return; }
-  throttle_ok_as po '{"idle":false,"reason":"drained","assessed_at":"2026-09-28T00:05:00Z"}' \
+  throttle_ok_as po '{"idle":false,"reason":"drained","assessed_at":"'"$TS_B"'"}' \
     || { fail "ac6: throttle_ok still false for po after the file was overwritten with idle:false - looks like a cached/one-time snapshot"; return; }
   pass "ac6: throttle_ok() picks up an overwritten assessment on the very next call, not a one-time snapshot"
 }
@@ -230,13 +232,13 @@ run_throttle_section() {
 
 test_ac7_board_sh_throttle_section_prints_the_recorded_reason() {
   local out
-  out=$(run_throttle_section '{"idle":true,"reason":"backlog too deep at stage:implement","assessed_at":"2026-09-28T00:00:00Z"}')
+  out=$(run_throttle_section '{"idle":true,"reason":"backlog too deep at stage:implement","assessed_at":"2026-09-28T00:00:00Z"}') # fixed-date-ok
   echo "$out" | grep -q '^IDLE' \
     || { fail "ac7: board.sh throttle_section didn't print IDLE for an idle:true fixture, got: $out"; return; }
   echo "$out" | grep -qF 'backlog too deep at stage:implement' \
     || { fail "ac7: board.sh throttle_section didn't print the recorded reason, got: $out"; return; }
 
-  out=$(run_throttle_section '{"idle":false,"reason":"plenty of room","assessed_at":"2026-09-28T00:05:00Z"}')
+  out=$(run_throttle_section '{"idle":false,"reason":"plenty of room","assessed_at":"2026-09-28T00:05:00Z"}') # fixed-date-ok
   echo "$out" | grep -q '^GO' \
     || { fail "ac7: board.sh throttle_section didn't print GO for an idle:false fixture, got: $out"; return; }
   echo "$out" | grep -qF 'plenty of room' \

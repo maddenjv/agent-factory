@@ -94,7 +94,7 @@ now_ts() { date -u -d "$1" +%FT%TZ; }
 
 # --- AC1: needs-human alert disappears once the label is removed (including by closing) ---
 test_ac1_drops_when_label_removed() {
-  local line="2026-09-23T09:00:00Z [engineer] issue-label-removed flagged needs-human by the agent"
+  local line="2026-09-23T09:00:00Z [engineer] issue-label-removed flagged needs-human by the agent" # fixed-date-ok
   run_recent_alerts "$line
 "
   if [ "$RESULT_RC" -ne 0 ]; then
@@ -110,7 +110,7 @@ $RESULT_OUT"
 }
 
 test_ac1_drops_when_issue_closed() {
-  local line="2026-09-23T09:00:02Z [engineer] issue-closed not completed after 3 attempts; labelled needs-human"
+  local line="2026-09-23T09:00:02Z [engineer] issue-closed not completed after 3 attempts; labelled needs-human" # fixed-date-ok
   run_recent_alerts "$line
 "
   if [ "$RESULT_RC" -ne 0 ]; then
@@ -127,7 +127,7 @@ $RESULT_OUT"
 
 # --- AC2: needs-human alert keeps appearing while the label is still present ---
 test_ac2_kept_while_label_present() {
-  local line="2026-09-23T09:00:00Z [engineer] issue-still-flagged flagged needs-human by the agent"
+  local line="2026-09-23T09:00:00Z [engineer] issue-still-flagged flagged needs-human by the agent" # fixed-date-ok
   run_recent_alerts "$line
 "
   if [ "$RESULT_RC" -ne 0 ]; then
@@ -145,7 +145,7 @@ $RESULT_OUT"
 # still_needs_human must handle both shapes `bd show --json` returns (bare object or a
 # one-element array), same as agent-loop.sh's existing show_json/has_label idiom.
 test_ac2_handles_array_shaped_bd_output() {
-  local line="2026-09-23T09:00:00Z [engineer] issue-as-array flagged needs-human by the agent"
+  local line="2026-09-23T09:00:00Z [engineer] issue-as-array flagged needs-human by the agent" # fixed-date-ok
   run_recent_alerts "$line
 "
   if [ "$RESULT_RC" -ne 0 ]; then
@@ -234,7 +234,7 @@ $RESULT_OUT"; ok=0; }
 #     showing the alert, never silently drop it. Not tied to a single AC number, but load-bearing
 #     for AC1/AC2 not becoming "drop on any doubt". ---
 test_failopen_bd_lookup_failure_keeps_alert() {
-  local line="2026-09-23T09:00:00Z [engineer] issue-missing flagged needs-human by the agent"
+  local line="2026-09-23T09:00:00Z [engineer] issue-missing flagged needs-human by the agent" # fixed-date-ok
   run_recent_alerts "$line
 "
   if [ "$RESULT_RC" -ne 0 ]; then

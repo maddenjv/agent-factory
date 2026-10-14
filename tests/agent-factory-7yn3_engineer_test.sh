@@ -43,9 +43,11 @@ exit 0
 STUB
 chmod +x "$TMP/bin/bd"
 
+FAR_FUTURE="2999-01-01T00:00:00Z" # fixed-date-ok
+
 issue() {  # issue ID ASSIGNEE LABELS_CSV
   jq -n --arg id "$1" --arg a "$2" --arg l "$3" \
-    '{id:$id, status:"in_progress", assignee:$a, labels:($l|split(",")), lease_expires_at:"2000-01-01T00:00:00Z"}'
+    '{id:$id, status:"in_progress", assignee:$a, labels:($l|split(",")), lease_expires_at:"2000-01-01T00:00:00Z"}' # fixed-date-ok
 }
 
 FIXTURE="$TMP/fixture.json"; BDLOG="$TMP/bd.log"
@@ -72,7 +74,7 @@ test_takeover_all_build_roles() {
 
 test_takeover_future_lease() {
   local out
-  out=$(jq -n '{id:"x1",status:"in_progress",assignee:"qa",labels:["needs-team-lead","role:qa"],lease_expires_at:"2999-01-01T00:00:00Z"}' \
+  out=$(jq -n '{id:"x1",status:"in_progress",assignee:"qa",labels:["needs-team-lead","role:qa"],lease_expires_at:"'"$FAR_FUTURE"'"}' \
     | run 'claim x1; echo "rc=$?"')
   grep -q '^rc=0$' <<<"$out" && grep -q -- '--force' "$BDLOG" \
     && pass "takeover: live lease does not block" || fail "takeover: live lease blocked: $out"

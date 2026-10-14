@@ -86,7 +86,7 @@ ran_triage() { grep -q "\] START " "$W/out"; }
 # agent-factory-ar5n's exact shape; $3 = labels JSON array, $2 = assignee
 stuck() {  # stuck ID ASSIGNEE LABELS_JSON
   jq -nc --arg id "$1" --arg a "$2" --argjson l "$3" \
-    '{id:$id,status:"in_progress",assignee:$a,type:"task",labels:$l,lease_expires_at:"2020-01-01T00:00:00Z"}'
+    '{id:$id,status:"in_progress",assignee:$a,type:"task",labels:$l,lease_expires_at:"2020-01-01T00:00:00Z"}' # fixed-date-ok
 }
 AR5N_LABELS='["needs-team-lead","role:qa","stage:verify","story:agent-factory-lv8s"]'
 
