@@ -135,7 +135,7 @@ test_ac5_usage_limit_follows_wait_not_age() {
 
 test_ac6_unparseable_timestamp_shown() {
   local a="not-a-timestamp [engineer] circuit breaker: git sync failing; stopping"
-  local b="9999-99-99T99:99:99Z [engineer] circuit breaker: 5 consecutive failures; stopping engineer"
+  local b="9999-99-99T99:99:99Z [engineer] circuit breaker: 5 consecutive failures; stopping engineer" # fixed-date-ok
   local c="garbage line with no format at all"
   run_recent_alerts "$a
 $b

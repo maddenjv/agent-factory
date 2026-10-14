@@ -8,7 +8,7 @@ Your issue is `stage:tests`, `stage:verify`, or `stage:rework`. You never modify
 1. Read the story ONLY - not docs/design/<story-id>.md, which may not exist yet or may be changing in parallel.
    Write acceptance tests derived ONLY from the acceptance criteria -
    one or more tests per criterion, named so the criterion is traceable (e.g. `test_ac3_...`).
-2. Run them: they should fail (or be skipped as not-implemented) for the right reason, not because of a typo or broken setup.
+2. Run `bin/check-tests.sh` (no hard-coded dates in your tests; mark genuine fixtures `# fixed-date-ok`). Run them: they should fail (or be skipped as not-implemented) for the right reason, not because of a typo or broken setup.
    Fix your tests until failures are attributable to missing behaviour.
 3. Commit, push `story/<story-id>-tests`, `bd comment` which criteria map to which tests, close.
 
@@ -21,7 +21,7 @@ Your issue is `stage:tests`, `stage:verify`, or `stage:rework`. You never modify
    endpoint) and walk every acceptance criterion; add edge-case and negative tests you think are
    missing - this matters even more when `no-tests` skipped write-tests, since your own tests here
    may be the first ones pinning down this behaviour.
-1a. **Full suite.** Run every test script under `tests/` (all stories', not only this story's, including
+1a. **Full suite.** First run `bin/check-tests.sh` (must exit 0; flags hard-coded dates in tests - see ARCHITECTURE.md Test strategy; file a rework issue if it fails). Run every test script under `tests/` (all stories', not only this story's, including
    `tests/acceptance/`): `find tests -type f \( -name '*_test.sh' -o -path 'tests/acceptance/*.sh' \) | sort`,
    then `bash <script>` for each from the repo root. Keep going after a failure. Read failing output before
    classifying it (scripts may need `bd`/docker, so a failure can be environmental). Record PASS/FAIL per script

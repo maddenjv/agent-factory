@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+TS_A="2026-09-28T00:00:00Z" # fixed-date-ok
 # Acceptance tests for agent-factory-whtf: "Throttle verbosity on board".
 #
 # One function per acceptance criterion in docs/stories/agent-factory-whtf.md (test_acN_...).
@@ -91,7 +92,7 @@ $RESULT_OUT"
 
 # --- AC2: idle:false -> no header, no body ---
 test_ac2_idle_false_hides_section_entirely() {
-  run_render '{"idle":false,"reason":"plenty of room","assessed_at":"2026-09-28T00:05:00Z"}'
+  run_render '{"idle":false,"reason":"plenty of room","assessed_at":"2026-09-28T00:05:00Z"}' # fixed-date-ok
   if [ "$RESULT_RC" -ne 0 ]; then
     fail "ac2: render() did not run cleanly (rc=$RESULT_RC):
 $RESULT_OUT"
@@ -113,7 +114,7 @@ $RESULT_OUT"
 
 # --- AC3: idle:true -> header, reason, and assessed-at time all still shown ---
 test_ac3_idle_true_still_shows_header_reason_and_time() {
-  run_render '{"idle":true,"reason":"backlog too deep at stage:implement","assessed_at":"2026-09-28T00:00:00Z"}'
+  run_render '{"idle":true,"reason":"backlog too deep at stage:implement","assessed_at":"2026-09-28T00:00:00Z"}' # fixed-date-ok
   if [ "$RESULT_RC" -ne 0 ]; then
     fail "ac3: render() did not run cleanly (rc=$RESULT_RC):
 $RESULT_OUT"
@@ -126,14 +127,14 @@ $RESULT_OUT"; ok=0; }
   echo "$RESULT_OUT" | grep -qF "backlog too deep at stage:implement" \
     || { fail "ac3: output is missing the recorded reason for idle:true:
 $RESULT_OUT"; ok=0; }
-  echo "$RESULT_OUT" | grep -qF "2026-09-28T00:00:00Z" \
+  echo "$RESULT_OUT" | grep -qF "$TS_A" \
     || { fail "ac3: output is missing the recorded assessed_at time for idle:true:
 $RESULT_OUT"; ok=0; }
   [ "$ok" -eq 1 ] && pass "ac3: header, reason, and assessed-at time all still appear when throttle.json records idle:true"
 }
 
 test_ac3_idle_true_header_precedes_reason() {
-  run_render '{"idle":true,"reason":"quota low","assessed_at":"2026-09-28T00:00:00Z"}'
+  run_render '{"idle":true,"reason":"quota low","assessed_at":"2026-09-28T00:00:00Z"}' # fixed-date-ok
   if [ "$RESULT_RC" -ne 0 ]; then
     fail "ac3 (order): render() did not run cleanly (rc=$RESULT_RC):
 $RESULT_OUT"
