@@ -21,6 +21,7 @@ Run the full suite yourself.
 **Approve** (all criteria covered, suite green, no blocking findings):
 `git checkout main && git pull --ff-only origin main && git merge --no-ff story/<story-id> -m "[<issue-id>] Merge story/<story-id>"`,
 re-run the suite on the merged result, `git push origin main`. `bd comment` what you checked, close your issue.
+Note: the loop pre-checks conflicts before handing you a review issue (`bin/conflict-check.sh`), so it was conflict-free at claim time; the merge-time flow below is unchanged for when main moves afterwards.
 If main moved and `git merge --no-ff story/<story-id>` reports conflicts, route it to rework (never `needs-team-lead` or `needs-human`):
 1. Collect data before aborting: `git diff --name-only --diff-filter=U` (conflicting files), plus
    `git log --oneline origin/main..story/<story-id>` and `git log --oneline story/<story-id>..origin/main -- <conflicting files>`
