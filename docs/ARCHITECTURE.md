@@ -74,6 +74,13 @@ remains, and records that judgment - with a reason - in `.agent-factory/control/
     them); rebuild with `docker compose build agent`. With nothing supplied the build is
     unchanged. `dotfiles/.gitkeep` must stay (otherwise `COPY` fails; restore with
     `mkdir dotfiles && touch dotfiles/.gitkeep`); it is removed from the image's home.
+  - **Project venv** (`agent-factory-mgq7`): if `PROJECT_DIR/.venv` exists, `bin/agent-loop.sh` runs
+    `bin/project-venv.sh` at startup (serialised by a `flock` on `control/venv.lock`), which recreates the
+    host venv's package set (read from its `site-packages/*.dist-info`, never executed or modified) as a
+    container-local venv at `.agent-factory/venv`, shared by all roles, stamp-keyed so unchanged sets are
+    reused and changed sets rebuilt; install failures are reported by package name and never block
+    startup. `VIRTUAL_ENV`/`PATH` are exported so plain `python` uses it. No host `.venv` -> no-op.
+    See `docs/design/agent-factory-mgq7.md`.
 - **Tracker**: Beads (`bd`), Dolt-backed, shared across all five containers.
 
 ## Layout
