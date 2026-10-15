@@ -89,8 +89,14 @@ services:
     # deliberate exceptions above are ~/.claude, ~/.ai-dev-kit and ~/.agents, each mounted
     # read-only so agent-loop.sh can copy them into this role's own writable volume/config at
     # startup (same pattern an interactive `claude` entrypoint would use for a login session).
+    #
+    # Passwordless sudo (agent-factory-eqy2) needs setuid to work, so no-new-privileges is NOT set
+    # (it makes the kernel ignore setuid). Capabilities stay dropped except a minimal set for
+    # sudo and apt/dpkg as root: SETUID/SETGID (sudo, apt's _apt), CHOWN/DAC_OVERRIDE/FOWNER/FSETID
+    # (dpkg unpacking), KILL (maintainer scripts), AUDIT_WRITE (sudo/PAM). No SYS_ADMIN etc., so
+    # root here cannot remount the :ro mounts.
     cap_drop: [ALL]
-    security_opt: ["no-new-privileges:true"]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, FSETID, SETUID, SETGID, KILL, AUDIT_WRITE]
     pids_limit: 512
     mem_limit: 6g
 

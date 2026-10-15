@@ -159,6 +159,7 @@ and keeps retrying the same issue indefinitely.
   permission, or an OAuth/GitHub-App token — classic `ghp_` PATs are rejected); not needed if
   you've already run `copilot login` on the host, reused the same way `~/.claude` is. Either way,
   put no other credentials in `.env`.
+- The non-root agent user has passwordless `sudo` so agents can `apt-get install` what a project needs (packages vanish on image rebuild; permanent needs should go in the `Dockerfile`). To allow this, `no-new-privileges` was removed from the `agent` service and `cap_drop: [ALL]` is paired with a small `cap_add` list (see `docker-compose.yml`); the docker socket, `~/.ssh`, pids/memory limits and read-only host mounts are unchanged.
 - Containers have full outbound network access. Agents can install packages and reach the internet, which is
   useful and also the exfiltration path. If that matters, add an egress allowlist (Anthropic's reference
   devcontainer uses an iptables firewall) before running unattended on anything sensitive.

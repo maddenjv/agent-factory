@@ -46,7 +46,7 @@ remains, and records that judgment - with a reason - in `.agent-factory/control/
     (`bin/init.sh --harness=<claude-code|copilot>`, default `claude-code`; see README; under copilot `agent-loop.sh` also passes `--add-dir "$KIT_DIR"` so agents can read/run kit scripts outside their clone) - plus
     `bd`/`beads`
     (`github.com/steveyegge/beads/cmd/bd`, go install, copied out of a throwaway builder stage),
-    `git`, `jq`, `curl`, `shellcheck`, `bash`. The `Dockerfile` creates the account from the host user: name, UID and
+    `git`, `jq`, `curl`, `shellcheck`, `sudo`, `bash`. The agent user has passwordless sudo (`/etc/sudoers.d/90-agent`, `agent-factory-eqy2`) so agents can install packages; root in the container is confined by the retained controls. Hardening adjusted to allow it: `no-new-privileges` removed (it disables setuid sudo) and `cap_drop: [ALL]` now paired with a minimal `cap_add` (CHOWN, DAC_OVERRIDE, FOWNER, FSETID, SETUID, SETGID, KILL, AUDIT_WRITE); unchanged: no docker socket, no `~/.ssh`, `pids_limit`, `mem_limit`, read-only host-config/kit mounts. Runtime installs do not persist across rebuilds. The `Dockerfile` creates the account from the host user: name, UID and
     GID from `HOST_USER`/`HOST_UID`/`HOST_GID` build args (so files it writes into host bind mounts
     are owned by the invoking host user), home `/home/$HOST_USER`. `CONTAINER_HOME` (env var,
     auto-populated into `.env` by `bin/init.sh` as `/home/<host user>`) is a separate, dependent setting - used only as
