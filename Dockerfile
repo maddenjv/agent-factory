@@ -18,6 +18,7 @@ ARG HARNESS=claude-code
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git jq curl ca-certificates shellcheck \
+      python3 python3-pip python3-venv perl default-jdk-headless build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Operator-supplied extra CA certificates (docs/ARCHITECTURE.md "Extra CA certificates").
