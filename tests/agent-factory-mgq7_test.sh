@@ -77,13 +77,6 @@ start_probe() {
 probe_part() { printf '%s\n' "$OUT" | sed -n '/^=== PROBE ===$/,$p' | tail -n +2; }
 startup_part() { printf '%s\n' "$OUT" | sed '/^=== PROBE ===$/,$d'; }
 
-IMPORT_PROBE='python - <<PY
-import importlib.metadata as m, sys
-print("EXE", sys.executable, "PREFIX", sys.prefix, "BASE", sys.base_prefix)
-for d in sorted(m.distributions(), key=lambda d: d.metadata["Name"].lower()):
-    print("PKG", d.metadata["Name"].lower(), d.version)
-PY'
-
 # ---------------- AC1 ----------------
 test_ac1_python_resolves_to_container_venv() {
   local p; p=$(new_project ac1) && make_host_venv "$p" || { fail "AC1: fixture setup failed"; return; }
