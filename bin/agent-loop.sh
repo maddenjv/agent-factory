@@ -495,6 +495,17 @@ sync_configs() {
 
 # ---------- startup ----------
 sync_configs
+
+# Recreate the host .venv as a container-local venv (shared by all roles; see bin/project-venv.sh).
+VENV_DIR="$DATA_DIR/venv"
+(
+  flock -w 900 9 || { log "venv: lock timed out; continuing without project venv"; exit 0; }
+  PROJECT_DIR="$PROJECT_DIR" DATA_DIR="$DATA_DIR" VENV_DIR="$VENV_DIR" bash "$KIT_DIR/bin/project-venv.sh" 2>&1 | while IFS= read -r l; do log "$l"; done
+) 9>"$CONTROL/venv.lock"
+if [ -x "$VENV_DIR/bin/python" ] && [ -f "$VENV_DIR/.af-ready" ] && [ -d "$PROJECT_DIR/.venv" ]; then
+  export VIRTUAL_ENV="$VENV_DIR" PATH="$VENV_DIR/bin:$PATH"
+fi
+
 git config --global user.name "$AGENT_ID"
 git config --global user.email "$AGENT_ID@factory.local"
 git config --global --add safe.directory '*'
