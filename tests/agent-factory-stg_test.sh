@@ -66,7 +66,7 @@ git init -q -b main "$ORIGIN" && git -C "$ORIGIN" -c user.name=t -c user.email=t
 
 # run_loop MODE LIMIT_MSG [SLEEP_STOP_AFTER] [MAX_ATTEMPTS]; sets W (workdir) and exit code RC
 run_loop() {
-  W="$TMP/run.$RANDOM"; mkdir -p "$W/data/control" "$W/home"; : > "$W/bdlog"
+  W="$(mktemp -d "$TMP/run.XXXXXX")"; mkdir -p "$W/data/control" "$W/home"; : > "$W/bdlog"
   RC=0
   ( export W HOME="$W/home" CONTAINER_HOME="$W/home" TZ=UTC
     export CLAUDE_MODE="$1" LIMIT_MSG="$2" SLEEP_STOP_AFTER="${3:-1}"
