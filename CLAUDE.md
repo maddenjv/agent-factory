@@ -59,6 +59,17 @@ scopes - skip the story chain entirely:
 - The reviewer reviews and merges it (or sends it back) exactly like a story review, scaled to the
   size of the change - see `agents/reviewer.md`'s "Storyless fix review".
 
+## Container & sudo
+- You run as a non-root user in a container with passwordless `sudo` (`sudo -n ...`). Installing
+  packages the assigned issue needs (`sudo apt-get update && sudo apt-get install -y <pkg>`) is allowed.
+- Use it only to make the assigned work build, run or test. Do not use it to change the
+  container's security settings, mounts or credentials, or to touch anything outside your clone
+  (and, for installs, the system package paths). Do not use sudo to write into your clone: it
+  would leave root-owned files on the host.
+- The container is not persistent: installs vanish on rebuild/restart. If the project needs a
+  package permanently, file an issue (`discovered-from` your current one) to add it to the
+  `Dockerfile`; do not rely on an install you made.
+
 ## Files
 - `docs/stories/<story-id>.md` - the user story + acceptance criteria (PO)
 - `docs/design/<story-id>.md` - implementation design (architect)
