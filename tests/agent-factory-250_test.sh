@@ -34,7 +34,7 @@ git init -q -b main "$ORIGIN" && git -C "$ORIGIN" -c user.name=t -c user.email=t
 # run_loop ROLE [MODEL_VAR=VALUE ...]; sets W (workdir) and RC (exit code); log at $W/data/logs/$ROLE/loop.log
 run_loop() {
   local role=$1; shift
-  W="$TMP/run.$RANDOM"; mkdir -p "$W/data/control" "$W/home"
+  W="$(mktemp -d "$TMP/run.XXXXXX")"; mkdir -p "$W/data/control" "$W/home"
   touch "$W/data/control/STOP"   # exit on the loop's first iteration, right after the startup log line
   RC=0
   ( export HOME="$W/home" CONTAINER_HOME="$W/home" TZ=UTC

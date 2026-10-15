@@ -58,7 +58,7 @@ git init -q -b main "$ORIGIN" && git -C "$ORIGIN" -c user.name=t -c user.email=t
 # (so team-lead goes straight to its throttle-assessment session).
 run_loop() {
   local role=$1 harness=$2; shift 2
-  W="$TMP/run.$RANDOM"; mkdir -p "$W/data/control" "$W/home"
+  W="$(mktemp -d "$TMP/run.XXXXXX")"; mkdir -p "$W/data/control" "$W/home"
   : > "$W/bdlog"; : > "$W/session_calls"; : > "$W/preflight_calls"
   echo '[{"id":"issue-1","status":"open","assignee":"","type":"task","labels":["role:'"$role"'","stage:verify","story:s"]}]' > "$W/issues.json"
   [ "$role" = team-lead ] && echo '[]' > "$W/issues.json"

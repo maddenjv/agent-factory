@@ -125,7 +125,7 @@ ORIGIN2="$TMP2/origin"
 git init -q -b main "$ORIGIN2" && git -C "$ORIGIN2" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
 
 run_loop2() {
-  W="$TMP2/run.$RANDOM"; mkdir -p "$W/data/control" "$W/home"; : > "$W/bdlog"; : > "$W/claude_runs"
+  W="$(mktemp -d "$TMP2/run.XXXXXX")"; mkdir -p "$W/data/control" "$W/home"; : > "$W/bdlog"; : > "$W/claude_runs"
   cp "$TMP2/issues.json" "$W/issues.json"
   RC=0
   ( export W HOME="$W/home" CONTAINER_HOME="$W/home"

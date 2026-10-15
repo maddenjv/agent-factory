@@ -73,7 +73,7 @@ git init -q -b main "$ORIGIN" && git -C "$ORIGIN" -c user.name=t -c user.email=t
 
 # run_loop ISSUES_JSON [TIMEOUT] [UPDATE_FAIL_ID]
 run_loop() {
-  W="$TMP/run.$RANDOM"; mkdir -p "$W/data/control" "$W/home"; : > "$W/bdlog"; : > "$W/claude_runs"
+  W="$(mktemp -d "$TMP/run.XXXXXX")"; mkdir -p "$W/data/control" "$W/home"; : > "$W/bdlog"; : > "$W/claude_runs"
   printf '%s' "$1" > "$W/issues.json"
   ( export W HOME="$W/home" CONTAINER_HOME="$W/home" UPDATE_FAIL_ID="${3:-}"
     PATH="$TMP/stubs:$PATH" ROLE=team-lead KIT_DIR="$KIT_DIR" PROJECT_DIR="$W" DATA_DIR="$W/data" ORIGIN="$ORIGIN" \
