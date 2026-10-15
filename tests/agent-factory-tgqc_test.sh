@@ -66,7 +66,7 @@ git init -q -b main "$ORIGIN" && git -C "$ORIGIN" -c user.name=t -c user.email=t
 
 # run_loop: env for the stub claude is taken from the caller's exported vars. Sets W and RC.
 run_loop() {  # run_loop PREFLIGHT MAX_ATTEMPTS
-  W="$TMP/run.$RANDOM"; mkdir -p "$W/data/control" "$W/home"; : > "$W/bdlog"
+  W="$(mktemp -d "$TMP/run.XXXXXX")"; mkdir -p "$W/data/control" "$W/home"; : > "$W/bdlog"
   RC=0
   ( export W HOME="$W/home" CONTAINER_HOME="$W/home" TZ=UTC
     PATH="$TMP/stubs:$PATH" ROLE=qa KIT_DIR="$KIT_DIR" PROJECT_DIR="$W" DATA_DIR="$W/data" ORIGIN="$ORIGIN" \

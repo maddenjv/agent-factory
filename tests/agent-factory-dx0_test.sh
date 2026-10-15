@@ -124,7 +124,7 @@ git init -q -b main "$ORIGIN" && git -C "$ORIGIN" -c user.name=t -c user.email=t
 # run_loop FIXTURE [TL_OUTCOME]: one pass of bin/agent-loop.sh ROLE=team-lead against the stubs
 # above; sets W and RC.
 run_loop() {
-  W="$TMP/run.$RANDOM"; mkdir -p "$W/data/control" "$W/home"; : > "$W/bdlog"; : > "$W/claude_runs"
+  W="$(mktemp -d "$TMP/run.XXXXXX")"; mkdir -p "$W/data/control" "$W/home"; : > "$W/bdlog"; : > "$W/claude_runs"
   cp "$1" "$W/issues.json"
   RC=0
   ( export W HOME="$W/home" CONTAINER_HOME="$W/home" TL_OUTCOME="${2:-}"
