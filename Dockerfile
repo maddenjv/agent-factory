@@ -17,7 +17,7 @@ ARG HOST_USER=agent
 ARG HARNESS=claude-code
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git jq curl ca-certificates shellcheck \
+      git jq curl ca-certificates shellcheck sudo \
       python3 python3-pip python3-venv perl default-jdk-headless build-essential \
     && rm -rf /var/lib/apt/lists/*
 
@@ -58,6 +58,15 @@ RUN ln -s bd /usr/local/bin/beads
 # regardless of what HOST_UID/HOST_GID are set to.
 RUN userdel -r node 2>/dev/null; groupdel node 2>/dev/null; \
     groupadd -g "$HOST_GID" "$HOST_USER" && useradd -u "$HOST_UID" -g "$HOST_GID" -m -s /bin/bash "$HOST_USER"
+
+# Passwordless sudo for the agent user (agent-factory-eqy2); the env_keep line keeps apt working
+# behind a proxy. visudo -cf fails the build on a malformed file.
+RUN printf '%s\n' \
+      "${HOST_USER} ALL=(ALL) NOPASSWD:ALL" \
+      "Defaults:${HOST_USER} env_keep += \"http_proxy https_proxy no_proxy HTTP_PROXY HTTPS_PROXY NO_PROXY\"" \
+      > /etc/sudoers.d/90-agent \
+    && chmod 0440 /etc/sudoers.d/90-agent \
+    && visudo -cf /etc/sudoers.d/90-agent
 
 USER ${HOST_USER}
 COPY --chown=${HOST_UID}:${HOST_GID} dotfiles/ /home/${HOST_USER}/

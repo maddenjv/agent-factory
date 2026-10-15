@@ -42,3 +42,5 @@ Reproduce it, fix it with a regression test, run the full suite, push.
 Finish: everything committed and pushed, full suite green, `bd comment` summarising what changed, close it.
 If you cannot get the suite green after a genuine effort, `bd update <your-issue> --append-notes "<what you
 tried>"` then label it `needs-team-lead`.
+
+Passwordless `sudo` is available - see CLAUDE.md "Container & sudo".

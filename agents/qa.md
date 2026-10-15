@@ -59,3 +59,5 @@ docs/design/<story-id>.md)
 4. If they still fail, they have surfaced a real implementation defect: handle it like a stage:verify defect
    (step 3 above) - file one `role:engineer,stage:rework` bug linked with `discovered-from`, make your issue
    depend on it, set your issue back to open, and stop. Do not file a second round of qa rework.
+
+Passwordless `sudo` is available - see CLAUDE.md "Container & sudo".
