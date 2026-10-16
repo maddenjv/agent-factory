@@ -14,17 +14,17 @@ pass() { PASS=$((PASS + 1)); echo "PASS: $1"; }
 fail() { FAIL=$((FAIL + 1)); echo "FAIL: $1"; }
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-mkdir -p "$TMP/stubs"
+mkdir -p "$TMP/stubs" "$TMP/datestub"
 export TZ=UTC
 REAL_DATE="$(command -v date)"
 
 # Stub date: with no -d, behaves as the real date at the pinned instant FAKE_NOW; with -d, real date.
-cat > "$TMP/stubs/date" <<STUB
+cat > "$TMP/datestub/date" <<STUB
 #!/usr/bin/env bash
 for a in "\$@"; do [ "\$a" = "-d" ] && exec $REAL_DATE "\$@"; done
 exec $REAL_DATE -d "@\$FAKE_NOW" "\$@"
 STUB
-chmod +x "$TMP/stubs/date"
+chmod +x "$TMP/datestub/date"
 
 # Extract the function under test.
 sed -n '/^usage_limit_wait_seconds() {/,/^}/p' "$KIT_DIR/bin/agent-loop.sh" > "$TMP/fn.sh"
@@ -32,7 +32,7 @@ sed -n '/^usage_limit_wait_seconds() {/,/^}/p' "$KIT_DIR/bin/agent-loop.sh" > "$
 # wait_at HH:MM MESSAGE -> seconds computed when "now" is today at HH:MM:00
 wait_at() {
   local now; now=$($REAL_DATE -d "today $1:00" +%s)
-  ( export FAKE_NOW="$now" QUOTA_RETRY_INTERVAL=777; PATH="$TMP/stubs:$PATH"
+  ( export FAKE_NOW="$now" QUOTA_RETRY_INTERVAL=777; PATH="$TMP/datestub:$PATH"
     # shellcheck disable=SC1091
     source "$TMP/fn.sh"; usage_limit_wait_seconds "$2" )
 }
