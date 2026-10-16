@@ -297,12 +297,13 @@ quota_hit_from_stream() {  # Claude Code only (stream-json's structured result e
 usage_limit_wait_seconds() {  # usage_limit_wait_seconds "<message text>" -> seconds to sleep
   # The CLI's wording for this varies ("...resets 5:50pm (UTC)", "...continuing automatically at
   # 6:50pm", etc.) so the time is matched wherever it appears, not anchored to specific lead-in
-  # words - just an H:MMam/pm clock time. Interpreted as the container's local time, which is UTC
+  # words - just an H:MMam/pm or bare-hour (7pm) clock time. Interpreted as the container's local time, which is UTC
   # by default in this image (see Dockerfile) and matches the CLI's own likely rendering, with or
   # without an explicit "(UTC)" label.
   local msg="$1" h m ap now epoch wait
-  if [[ "$msg" =~ ([0-9]{1,2}):([0-9]{2})[[:space:]]*([AaPp][Mm]) ]]; then
-    h="${BASH_REMATCH[1]}"; m="${BASH_REMATCH[2]}"; ap="${BASH_REMATCH[3],,}"
+  if [[ "$msg" =~ ([0-9]{1,2})(:([0-9]{2}))?[[:space:]]*([AaPp][Mm])([^A-Za-z]|$) ]]; then
+    h="${BASH_REMATCH[1]}"; m="${BASH_REMATCH[3]:-00}"; ap="${BASH_REMATCH[4],,}"
+    h=$((10#$h))
     [ "$ap" = pm ] && [ "$h" -ne 12 ] && h=$((h+12))
     [ "$ap" = am ] && [ "$h" -eq 12 ] && h=0
     now=$(date +%s)
