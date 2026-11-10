@@ -165,24 +165,18 @@ blocked_section() {
   '
 }
 
-throttle_section() {
-  local f="$DATA_DIR/control/throttle.json"
-  [ -f "$f" ] || { echo "(no assessment yet - po/architect proceed unthrottled)"; return; }
-  jq -r '(if .idle then "IDLE" else "GO" end) as $s | "\($s)  (assessed \(.assessed_at // "?"))  \(.reason // "no reason recorded")"' "$f" 2>/dev/null \
-    || echo "(unreadable: $f)"
+gate_section() {  # PO idle state written by agent-loop.sh (agent-factory-hr7o); quiet when absent
+  local f="$DATA_DIR/control/state/po-gate" count limit
+  [ -f "$f" ] || return 0
+  read -r count limit < "$f"
+  echo; echo "-- po gate (engineering queue full) --"
+  echo "idle: $count ready role:engineer issues >= MAX_READY_ENGINEER_ISSUES=$limit"
 }
 
 render() {
   clear
   echo "== $(date -u +%FT%TZ) =="
-  local throttle_out
-  throttle_out=$(throttle_section)
-  if [[ "$throttle_out" == "GO  ("* || "$throttle_out" == "(no assessment yet"* ]]; then
-    :  # nothing held back, or no judgment recorded yet - AC1/AC2: stay quiet
-  else
-    echo; echo "-- throttle (po/architect) --"
-    echo "$throttle_out"  # IDLE, or the file exists but is unreadable/malformed - AC3/AC4: surface it
-  fi
+  gate_section
   echo; echo "-- in progress --"
   bd list --json 2>/dev/null | bd_unwrap | jq -r '.[]? | select(.status=="in_progress") | "\(.id)  [\(.assignee // "-")]  \(.title)"'
   echo; echo "-- ready --"

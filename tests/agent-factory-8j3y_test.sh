@@ -55,19 +55,19 @@ ORIGIN="$TMP/origin"
 git init -q -b main "$ORIGIN" && git -C "$ORIGIN" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
 
 # run_loop ROLE HARNESS [VAR=VAL...]  -> sets W, RC. One ready issue for qa; none for team-lead
-# (so team-lead goes straight to its throttle-assessment session).
+# (team-lead gets a needs-team-lead issue, since it no longer runs issue-less sessions).
 run_loop() {
   local role=$1 harness=$2; shift 2
   W="$(mktemp -d "$TMP/run.XXXXXX")"; mkdir -p "$W/data/control" "$W/home"
   : > "$W/bdlog"; : > "$W/session_calls"; : > "$W/preflight_calls"
   echo '[{"id":"issue-1","status":"open","assignee":"","type":"task","labels":["role:'"$role"'","stage:verify","story:s"]}]' > "$W/issues.json"
-  [ "$role" = team-lead ] && echo '[]' > "$W/issues.json"
+  [ "$role" = team-lead ] && echo '[{"id":"issue-1","status":"open","assignee":"","type":"task","labels":["role:qa","stage:verify","story:s","needs-team-lead"]}]' > "$W/issues.json"
   RC=0
   ( unset MODEL TIER_TEAM_LEAD TIER_STANDARD MODEL_PO MODEL_ARCHITECT MODEL_ENGINEER MODEL_QA MODEL_REVIEWER MODEL_TEAM_LEAD
     export W HOME="$W/home" CONTAINER_HOME="$W/home"
     export PATH="$TMP/stubs:$PATH" ROLE="$role" HARNESS="$harness" KIT_DIR="$KIT_DIR" PROJECT_DIR="$W" \
       DATA_DIR="$W/data" ORIGIN="$ORIGIN" PREFLIGHT=0 MAX_ATTEMPTS_PER_ISSUE=1 MAX_CONSECUTIVE_FAILURES=1 \
-      IDLE_SLEEP=1 THROTTLE_STALE_SECS=0 QUOTA_RETRY_INTERVAL=1 "$@"
+      IDLE_SLEEP=1 QUOTA_RETRY_INTERVAL=1 "$@"
     timeout 60 bash "$KIT_DIR/bin/agent-loop.sh" >"$W/out" 2>&1 ) || RC=$?
 }
 

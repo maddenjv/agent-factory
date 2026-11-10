@@ -123,8 +123,7 @@ a new `CLAUDE.md` or an appended section on your existing one) straight to your 
 By default team-lead is a full session on the most capable model. Set `SYSTEM1_ENABLED=1` in
 `.agent-factory/.env` and a small model (default `hf.co/LiquidAI/d1-2B`) instead makes team-lead's
 finite decisions - route an unrouted or `needs-team-lead` issue, size a `needs-chain` story's chain, or
-send a no-story issue to po vs straight to a generated story - through `bin/system1.sh`. The throttle
-assessment still uses the capable model. Any failure (unreachable, timeout, invalid answer) labels the
+send a no-story issue to po vs straight to a generated story - through `bin/system1.sh`. Any failure (unreachable, timeout, invalid answer) labels the
 issue `needs-human` with a note holding the raw model output; the capable model is not started. Every
 decision is recorded with `bd comment` naming the model, endpoint host and reason (see `bd show`).
 
@@ -150,7 +149,7 @@ Docker Desktop; install `docker-model-plugin` on Docker Engine), set `SYSTEM1_EN
 | Watch an agent | its pane in the `agents` window (rendered tool calls/text; Ctrl-b o to cycle, Ctrl-b q to jump by number); raw stream in `<project>/.agent-factory/logs/<role>/*.jsonl` (Claude Code) or `*.log` (Copilot CLI, plain text) |
 | Review-by-exception | `needs-human` list on the board; `bd show <id>` — the agent (or agent-loop.sh itself, on an attempt-cap/failure escalation) leaves a note on the issue explaining exactly what it needs; set `NOTIFY_URL` for push alerts |
 | Unstick an issue | answer what the issue's note asked for, then `approve.sh <id> -m "<answer>"` (or plain `approve.sh <id>`) |
-| Ask team-lead to triage a stuck issue | `bd label add <id> needs-team-lead` - it has its own pane in the `agents` window and picks the issue up on its next poll. It also picks up issues with no `role:*` label, and every new story's `needs-chain` sizing request, on its own, no hand-labelling needed; it also periodically judges whether po/architect should keep starting new work - see the board's `-- throttle --` line for its current call and reason. |
+| Ask team-lead to triage a stuck issue | `bd label add <id> needs-team-lead` - it has its own pane in the `agents` window and picks the issue up on its next poll. It also picks up issues with no `role:*` label, and every new story's `needs-chain` sizing request, on its own, no hand-labelling needed; |
 | Pause / resume | `bin/stop.sh` (graceful) / `bin/stop.sh clear` then `bin/start.sh` — run from the same project directory |
 | Hard stop | `bin/stop.sh now` |
 | Restart one agent | `tmux list-panes -t factory:agents` for its index, then `tmux respawn-pane -k -t factory:agents.<index>` |
@@ -162,10 +161,9 @@ an agent after N consecutive failed sessions and alerts; daily spend cap (`DAILY
 enforced for Claude Code only: Copilot CLI has no per-session USD figure to report, so sessions
 under `HARNESS=copilot` record $0 cost and `DAILY_BUDGET_USD` is not a real spend cap for them -
 use GitHub's own Copilot Premium Requests budget setting instead);
-a team-lead-judged throttle on `po`/`architect` only (never `engineer`/`qa`/`reviewer`) - team-lead
-periodically weighs the engineer/qa/reviewer backlog and remaining usage/budget quota and records
-`go`/`idle` (with a reason) in `.agent-factory/control/throttle.json`; see the board's `-- throttle
---` line for the current call (`agent-factory-q4tj`);
+a PO gate: `po` idles while `MAX_READY_ENGINEER_ISSUES` (default 5; `0`/empty = no limit) or more
+`role:engineer` issues are ready (`bd ready`), resuming automatically as the queue drains; the board shows
+a `-- po gate --` section while it is held back (`agent-factory-hr7o`);
 STOP flags; startup preflight (bd reachable, credentials work); clean git slate every session, so unpushed work
 is discarded.
 
