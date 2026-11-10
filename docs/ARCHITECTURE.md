@@ -6,35 +6,31 @@ project, coordinated through Beads (`bd`) and git. There is no application sourc
 to compile; "the code" is the `bin/*.sh` scripts, `docker-compose.yml`, the `Dockerfile` for the
 `agent` image, and the per-role prompts under `agents/`.
 
-A sixth role, `team-lead`, triages four kinds of work: issues explicitly labelled
+A sixth role, `team-lead`, triages two kinds of work: issues explicitly labelled
 `needs-team-lead` (a stuck piece of work another role flagged); open issues that carry no
 `role:*` label at all and aren't `needs-human`/`needs-team-lead` (since `agent-factory-m7af`,
 widened by `agent-factory-wnju` to include every issue `bin/feature.sh` files - it applies no
 `role:*` label, so every new request is triaged here before po ever sees it), whether created by
-`feature.sh` or reaching the board some other way; and - since
-`agent-factory-x8wj` - a `needs-chain` issue po files for every new story right after writing
-`docs/stories/<id>.md`, asking team-lead to decide which of the five stages that story's chain
-actually needs (favoring inclusion whenever it's unsure) and build it with `bin/new-story.sh` -
-po itself no longer calls that script. `agent-loop.sh` finds all three directly via `bd list`
+`feature.sh` or reaching the board some other way. po builds every story's full chain itself with
+`bin/new-story.sh`. `agent-loop.sh` finds both directly via `bd list`
 (not a `role:team-lead` label the other five use, and not `bd ready`, since the whole point is
-investigating issues that may be blocked, unrouted, or not built yet). `needs-team-lead` issues
+investigating issues that may be blocked or unrouted). `needs-team-lead` issues
 are picked up even while still claimed by the escalating build role (`agent-factory-rcjb`: an assignee matching the issue's own `role:*` label -
 its stale claim - is taken over; any other assignee is respected; the takeover is a forced reassign, since bd forbids `--force` together with `--if-assignee`; a claim that fails is logged with bd's error and skipped for `CLAIM_SKIP_SECS` rather than retried every cycle), and team-lead releases the claim
-when it reroutes to a role. Conversely (`agent-factory-zf0i`), a role also picks up an issue routed to it (`role:<x>`) that team-lead left claimed (assignee `team-lead`), unless it carries `needs-team-lead`/`needs-chain`/`needs-human`, is blocked, has a live lease, or is the issue team-lead's loop is running (loop-owned `$CONTROL/state/team-lead/working` marker); the takeover is a forced reassign. team-lead reroutes stuck work to
-the correct role/stage, fixes it directly, routes a no-story-context issue to `role:po`, sizes a
-new story's chain, or escalates to `needs-human` - see `agents/team-lead.md`. It runs on the most
+when it reroutes to a role. Conversely (`agent-factory-zf0i`), a role also picks up an issue routed to it (`role:<x>`) that team-lead left claimed (assignee `team-lead`), unless it carries `needs-team-lead`/`needs-human`, is blocked, has a live lease, or is the issue team-lead's loop is running (loop-owned `$CONTROL/state/team-lead/working` marker); the takeover is a forced reassign. team-lead reroutes stuck work to
+the correct role/stage, fixes it directly, routes a no-story-context issue to `role:po`, or escalates to `needs-human` - see `agents/team-lead.md`. It runs on the most
 capable model tier (`agent-factory-250`) and has its own pane in `bin/start.sh`'s tmux layout
-(`agent-factory-uhc`). Since `agent-factory-q4tj`, it also runs a fourth, issue-less kind of session
+(`agent-factory-uhc`). Since `agent-factory-q4tj`, it also runs a third, issue-less kind of session
 on a timer (`THROTTLE_STALE_SECS`, default 900s): it judges whether `po`/`architect` should keep
 starting new top-of-funnel work, based on how deep the `engineer`/`qa`/`reviewer` backlog has grown
-(including stories that only have a `needs-chain` issue open) and how much usage quota/budget
+and how much usage quota/budget
 remains, and records that judgment - with a reason - in `.agent-factory/control/throttle.json`
 (`bin/set-throttle.sh`). `bin/agent-loop.sh`'s `throttle_ok()` reads it for `po`/`architect` only;
 `engineer`/`qa`/`reviewer` are never throttled by it, and a missing/stale file fails open (see
 `docs/design/agent-factory-q4tj.md`'s Error cases) rather than wedging the whole factory.
 
 Since `agent-factory-73cw`, an optional **System 1** mode (`SYSTEM1_ENABLED=1`) makes team-lead's
-issue-driven decisions (route an unrouted/`needs-team-lead` issue, size a `needs-chain` story, or send a
+issue-driven decisions (route an unrouted/`needs-team-lead` issue, or send a
 no-story issue to po vs straight to a script-generated story) with a small OpenAI-compatible chat model
 (Docker Model Runner locally, or a hosted endpoint) via `bin/system1.sh`, instead of a harness session;
 any failure labels the issue `needs-human`. Throttle assessment still uses the capable model. See
@@ -111,10 +107,8 @@ Two paths reach `main`, chosen by how much the work actually needs - see CLAUDE.
 fix work" for the mechanics an agent follows, and `agents/reviewer.md` for how each is reviewed:
 - **Story path** (default; required whenever the work needs a new design decision or new tests):
   `story/<story-id>`, cut from `main` by po, runs design (architect) -> tests (qa) -> implement
-  (engineer) -> verify (qa) -> review (reviewer) - design and/or tests can be skipped for simple
-  work (`agent-factory-x8wj`: team-lead decides per story, favoring inclusion whenever unsure;
-  implement/verify/review are never skipped). `bin/new-story.sh` builds whichever of those stages
-  team-lead decided the story needs.
+  (engineer) -> verify (qa) -> review (reviewer). Every story always gets all five stages;
+  po runs `bin/new-story.sh` to build them.
 - **Storyless fix path** (small, self-contained `discovered-from` follow-ups only - a stale doc
   line, a one-line test fix, anything already fully scoped by the issue that found it, needing no
   new design decision and no new test): a `fix/<issue-id>` branch cut directly from `main`,

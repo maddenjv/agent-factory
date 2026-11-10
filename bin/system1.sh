@@ -37,8 +37,7 @@ fail() {  # fail MSG: terminal outcome = needs-human with the failure and raw mo
 }
 
 classify() {
-  if has_label needs-chain; then KIND=chain
-  elif has_label needs-team-lead; then KIND=route
+  if has_label needs-team-lead; then KIND=route
   elif [ -z "$(label_with_prefix role:)" ]; then
     if [ -n "$(label_with_prefix story:)" ]; then KIND=route; else KIND=intake; fi
   else KIND=route   # routed already, no escalation: treat as a routing question
@@ -49,7 +48,6 @@ system_prompt() {
   case "$KIND" in
     route) echo 'You are the routing step of a software-factory. Decide which role should handle the issue next. Roles and stages: po (no stage), architect/design, qa/tests, engineer/implement, qa/verify, reviewer/review, or rework by architect|engineer|qa|reviewer. If you cannot decide, choose human. Reply with exactly one JSON object and no prose: {"decision":"route","role":"<role>","stage":"<stage or empty for po>","reason":"<why>"} or {"decision":"human","reason":"<why>"}.' ;;
     intake) echo 'You are the intake step of a software-factory. Decide how to handle a new unrouted issue. "po": it needs a product owner to write the story. "direct": it already has enough context (e.g. a bug with log snippets or a log path) to skip the product owner. "human": you cannot tell. Reply with exactly one JSON object and no prose: {"decision":"po"|"direct"|"human","reason":"<why>"}.' ;;
-    chain) echo 'You size the work chain for a story. skip_design=true only if the change is simple enough not to need a design document. skip_tests=true only if existing tests already cover the behaviour. When unsure, use false. Reply with exactly one JSON object and no prose: {"skip_design":true|false,"skip_tests":true|false,"reason":"<why>"}.' ;;
   esac
 }
 
@@ -60,13 +58,8 @@ user_prompt() {
   local sid; sid=$(label_with_prefix story: | sed 's/^story://')
   if [ -n "$sid" ] && [ "$KIND" != intake ]; then
     local doc="$REPO/docs/stories/$sid.md"
-    if [ "$KIND" = chain ]; then
-      [ -f "$doc" ] && out="$out"$'\n\nStory doc:\n'"$(trunc "$(cat "$doc")" "$CAP")"
-      out="$out"$'\n\nExisting test files:\n'"$(ls "$REPO/tests" 2>/dev/null | head -100)"
-    else
-      [ -f "$doc" ] && out="$out"$'\n\nStory doc header:\n'"$(head -20 "$doc")"
-      out="$out"$'\n\nIssues in this story:\n'"$(bd list --label "story:$sid" --json 2>/dev/null | bd_unwrap | jq -r '.[]? | "\(.id) \(.status // "") \((.labels // []) | map(select(startswith("role:") or startswith("stage:"))) | join(","))"' 2>/dev/null)"
-    fi
+    [ -f "$doc" ] && out="$out"$'\n\nStory doc header:\n'"$(head -20 "$doc")"
+    out="$out"$'\n\nIssues in this story:\n'"$(bd list --label "story:$sid" --json 2>/dev/null | bd_unwrap | jq -r '.[]? | "\(.id) \(.status // "") \((.labels // []) | map(select(startswith("role:") or startswith("stage:"))) | join(","))"' 2>/dev/null)"
   fi
   trunc "$out" $((CAP * 2))
 }
@@ -199,27 +192,6 @@ do_intake() {
   esac
 }
 
-do_chain() {
-  local sd st sid title flags=() out skipped=""
-  printf '%s' "$DECISION" | jq -e '(.skip_design|type=="boolean") and (.skip_tests|type=="boolean")' >/dev/null 2>&1 \
-    || fail "chain decision needs boolean skip_design and skip_tests"
-  reason_ok
-  sd=$(jget '.skip_design'); st=$(jget '.skip_tests')
-  if [ "$st" = true ] && [ -z "$(ls "$REPO/tests" 2>/dev/null)" ]; then st=false; fi
-  sid=$(label_with_prefix story: | sed 's/^story://')
-  [ -n "$sid" ] || fail "needs-chain issue has no story: label"
-  if bd list --label "story:$sid" --json 2>/dev/null | bd_unwrap | jq -e '[.[]? | select((.labels // []) | index("stage:design") or index("stage:implement"))] | length > 0' >/dev/null 2>&1; then
-    fail "a chain for story $sid already exists"
-  fi
-  title=$(printf '%s' "$ISSUE" | jq -r '.title // ""' | sed -E 's/^[^ ]+: Decide stage chain for //')
-  [ "$sd" = true ] && { flags+=(--skip-design); skipped="design "; }
-  [ "$st" = true ] && { flags+=(--skip-tests); skipped="${skipped}tests"; }
-  out=$("$KIT_DIR/bin/new-story.sh" "$sid" "$title" "${flags[@]}" 2>&1) || fail "new-story.sh failed: $(trunc "$out" 500)"
-  bd comment "$ID" "$PROV: chain built (skipped: ${skipped:-none}) - $REASON. $(printf '%s' "$out" | head -1)" >/dev/null 2>&1
-  bd close "$ID" >/dev/null 2>&1
-  log "$ID -> chain for $sid (skipped: ${skipped:-none})"
-}
-
 main() {
   ID=${1:?usage: system1.sh <issue-id>}
   if [ "${SYSTEM1_ENABLED:-}" != 1 ]; then fail "System 1 enabled but not configured: SYSTEM1_ENABLED is not 1"; fi
@@ -233,7 +205,6 @@ main() {
   case "$KIND" in
     route) do_route ;;
     intake) do_intake ;;
-    chain) do_chain ;;
   esac
 }
 
