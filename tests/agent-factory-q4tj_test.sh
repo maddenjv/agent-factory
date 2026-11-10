@@ -25,10 +25,8 @@ TS_B="2026-09-28T00:05:00Z" # fixed-date-ok
 #
 # Written BEFORE implementation: expect every test below to fail right now, for the legitimate
 # reason that agents/team-lead.md says nothing about po/architect idling, backlog size, or quota
-# at all yet (confirmed by reading the file: it only covers the needs-team-lead triage, the
-# needs-chain stage-chain sizing from agent-factory-x8wj, and the no-role-label sweep - grepping it
-# for po|architect|idle|backlog|quota|budget|throughput|capacity turns up only incidental mentions
-# of po filing the needs-chain issue, nothing about throttling either role).
+# at all yet (confirmed by reading the file: it only covers the needs-team-lead triage and
+# the no-role-label sweep).
 #
 # Run directly: bash tests/agent-factory-q4tj_test.sh
 set -uo pipefail
@@ -100,19 +98,6 @@ test_ac4_low_quota_or_budget_favors_finishing_in_flight_work_over_starting_new()
   echo "$tl_content" | grep -qiE 'favor(ing)?.{0,60}(finish|complet)|(finish|complet).{0,60}favor|before.{0,40}(run(s)? out|exhaust)|unlikely to finish' \
     || { fail "ac4: agents/team-lead.md doesn't say low quota/budget favors finishing in-flight work over starting new work"; return; }
   pass "ac4: agents/team-lead.md ties low remaining quota/budget to holding back new starts in favor of finishing in-flight stories"
-}
-
-# ============================================================
-# AC5 - a story that currently has only team-lead's role:team-lead,needs-chain issue open (no
-# stage issue yet) is accounted for as occupying capacity when team-lead assesses backlog size.
-# ============================================================
-
-test_ac5_needs_chain_only_story_counts_as_occupying_capacity() {
-  echo "$tl_content" | grep -qiE 'needs-chain' \
-    || { fail "ac5: agents/team-lead.md doesn't mention needs-chain issues in the backlog-assessment context"; return; }
-  echo "$tl_content" | grep -qiE 'count(s|ed)? (as|toward)|occup(y|ies|ying)|before.{0,40}(design|write-tests|implement|verify|review).{0,40}exists|no stage issue' \
-    || { fail "ac5: agents/team-lead.md doesn't say a needs-chain-only story (no stage issue yet) still counts toward the backlog assessment"; return; }
-  pass "ac5: agents/team-lead.md accounts for a story that only has its needs-chain issue as occupying backlog capacity"
 }
 
 # ============================================================

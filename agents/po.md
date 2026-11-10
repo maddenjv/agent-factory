@@ -15,13 +15,15 @@ Your issue is a feature request (`bd show <id>`). Turn it into one small, well-s
    - **Acceptance criteria**: numbered, each independently testable, written as Given/When/Then. Observable behaviour only, no implementation detail.
    - **Out of scope**: what this story deliberately does not cover.
 5. Commit, `git push -u origin story/<id>`.
-6. Create team-lead's chain-sizing issue - do not run `new-story.sh` yourself; team-lead decides
-   which stages the chain needs and builds it (see `agents/team-lead.md`'s "Size a new story's
-   chain"):
+6. Build the story's chain with `bin/new-story.sh` (every story always gets the full chain: design,
+   write-tests, implement, verify, review). First an idempotency guard, so a restarted session does
+   not duplicate it: `bd list --label story:$id --all --json` - if any issue there already has a
+   `stage:` label, the chain exists; skip to step 7. Otherwise:
    ```
-   bd create "$id: Decide stage chain for <short title>" -t task -p 2 -l role:team-lead,needs-chain,story:$id \
-     -d "Story: docs/stories/$id.md. Branch: story/$id. Decide which of the five stages (design, write-tests, implement, verify, review) this story's chain needs, then build it with bin/new-story.sh. See agents/team-lead.md's 'Size a new story's chain'. Conventions: CLAUDE.md."
+   bin/new-story.sh $id "<short title>"
    ```
-7. `bd comment` a one-line summary, close your issue.
+   If it exits non-zero, follow the blocked path (`--append-notes` with the error, `needs-team-lead`)
+   and stop.
+7. `bd comment` a one-line summary (include the script's output line with the new issue ids), close your issue.
 
 You never write code, tests or designs.

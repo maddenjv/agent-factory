@@ -114,27 +114,6 @@ test_ac2_sweep_with_story_label_inherits_unclaim() {
 }
 
 # ============================================================
-# AC3 - after building a stage chain, team-lead's own claimed issue (e.g. the needs-chain sizing issue,
-# if left open) is not left claimed.
-# ============================================================
-
-test_ac3_size_chain_section_mentions_unclaim() {
-  local s; s="$(section '^## Size a new story')"
-  if grep -q "$UNCLAIM" <<<"$s"; then pass "AC3: 'Size a new story's chain' section names 'bd unclaim'"
-  else fail "AC3: 'Size a new story's chain' section never mentions 'bd unclaim'"; fi
-}
-
-test_ac3_unclaim_is_conditional_on_issue_left_open() {
-  # The sizing issue is normally closed; the unclaim is required only if it is left open/claimed.
-  local s; s="$(section '^## Size a new story')"
-  if grep -B3 -A3 "$UNCLAIM" <<<"$s" | grep -qiE 'open|not (closed|close)|left|otherwise|if '; then
-    pass "AC3: chain-section unclaim is tied to the issue being left open"
-  else
-    fail "AC3: chain-section unclaim is not tied to the sizing issue being left open"
-  fi
-}
-
-# ============================================================
 # AC4 - issues team-lead keeps (needs-human escalation) or closes need no extra unclaim; the rule
 # applies only to issues handed on to another role's queue.
 # ============================================================

@@ -11,8 +11,7 @@
 # so these tests can assert on priority/description/labels without depending on a live `bd`.
 #
 # The flag shape tested here (`--priority <value>`, trailing after the positional title and
-# optional description) mirrors new-story.sh's existing `--skip-design`/`--skip-tests` trailing-flag
-# convention, per the story's Context section and team-lead's scoping note on agent-factory-k7al
+# optional description) mirrors the trailing-flag convention used by other bin/ scripts, per the story's Context section and team-lead's scoping note on agent-factory-k7al
 # (the note that justified skipping design for this story in the first place).
 #
 # Written BEFORE implementation: expect every test below to fail right now, since bin/feature.sh
