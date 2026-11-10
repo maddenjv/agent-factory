@@ -136,6 +136,14 @@ decision is recorded with `bd comment` naming the model, endpoint host and reaso
 | `SYSTEM1_API_KEY` | optional Bearer key for a hosted endpoint |
 | `SYSTEM1_TIMEOUT` | request timeout in seconds (default 60) |
 | `SYSTEM1_LOCAL` | `1` = `bin/init.sh` runs `docker model pull $SYSTEM1_MODEL` |
+| `MODEL_HIGH` / `MODEL_MEDIUM` / `MODEL_LOW` | harness model names for the per-task model class (below); empty = unset |
+
+**Per-task model class.** With the three class models set, each session in any role first asks System 1
+(`bin/system1-class.sh`) whether the issue needs a `high`, `medium` or `low` class model and runs with
+the matching `MODEL_<CLASS>`. If System 1 is off, unreachable or answers something invalid, the session
+uses `MODEL_MEDIUM` (the loop log records the fallback and reason); if the chosen class variable is empty
+the role's default model is used. An explicit `MODEL_<ROLE>` wins and skips System 1. Each choice is logged
+as `model: <issue> class=... source=... model=...`.
 
 **Local:** enable Docker Model Runner with TCP (`docker desktop enable model-runner --tcp 12434` on
 Docker Desktop; install `docker-model-plugin` on Docker Engine), set `SYSTEM1_ENABLED=1` and
