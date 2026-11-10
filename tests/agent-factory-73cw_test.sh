@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Acceptance tests for agent-factory-73cw: a "System 1" model makes team-lead's finite routing /
-# chain-sizing decisions. One or more tests per acceptance criterion in
+# no-story intake decisions. One or more tests per acceptance criterion in
 # docs/stories/agent-factory-73cw.md (test_acN_...). Written BEFORE the implementation and from the
 # story only, so every name below is an ASSUMED interface (the story leaves them open); if the design
 # picks different ones, change the constants in this block - not the assertions.
@@ -18,11 +18,9 @@
 #             {"decision":"route","role":"qa","stage":"verify","reason":"..."}  |  {"decision":"human","reason":"..."}
 #   intake (unrouted issue with NO story: label - AC3'):
 #             {"decision":"po|direct|human","reason":"..."}
-#   chain (needs-chain issue - AC3'): {"skip_design":bool,"skip_tests":bool,"reason":"..."}
 # AC3 is read as AC3' per docs/design/agent-factory-73cw.md: there is no PO stage in a chain; the
 # unrouted-issue intake decides po (route to po) / direct (script builds the story + full five-stage
-# chain, no PO) / human; a needs-chain issue only decides skip_design / skip_tests (skip_tests is
-# honoured only when tests/ is non-empty). SYSTEM1_LOCAL=1 + flag => init.sh pulls the model.
+# chain, no PO) / human. SYSTEM1_LOCAL=1 + flag => init.sh pulls the model.
 #
 # Harness: the REAL bin/agent-loop.sh (ROLE=team-lead) runs against a stateful stub `bd` (applies
 # label/update/comment/create to a JSON fixture), a stub `claude` (records that a capable-model session
@@ -159,9 +157,6 @@ JSON
 cat > "$TMP/escalated.json" <<'JSON'
 [{"id":"t-1","title":"story-x: implement","description":"Implement.","status":"in_progress","assignee":"engineer","labels":["role:engineer","stage:implement","story:story-x","needs-team-lead"],"notes":"engineer: design doc missing section 3"}]
 JSON
-cat > "$TMP/chain.json" <<'JSON'
-[{"id":"t-1","title":"story-x: Add widget","description":"Story: docs/stories/story-x.md. Bug with log snippet: KeyError at app.py:12","status":"open","assignee":"","labels":["role:team-lead","needs-chain","story:story-x"]}]
-JSON
 
 # run_loop FIXTURE MODE REPLY [extra env assignments...]
 # MODE: ok|garbage|badvalue|http500|hang|down|off (off = flag unset). Sets W, RC.
@@ -201,14 +196,11 @@ ROUTE_HUMAN='{"decision":"human","role":"human","stage":"","target":"human","nee
 INTAKE_PO='{"decision":"po","reason":"'"$REASON"'"}'
 INTAKE_DIRECT='{"decision":"direct","reason":"'"$REASON"'"}'
 INTAKE_HUMAN='{"decision":"human","reason":"'"$REASON"'"}'
-CHAIN_NOSKIP='{"skip_design":false,"skip_tests":false,"reason":"'"$REASON"'"}'
-CHAIN_SKIP_DESIGN='{"skip_design":true,"skip_tests":false,"reason":"'"$REASON"'"}'
-CHAIN_SKIP_TESTS='{"skip_design":false,"skip_tests":true,"reason":"'"$REASON"'"}'
 
 # ---------- AC1: flag unset => unchanged capable-model session ----------
 test_ac1_flag_unset_runs_capable_model_session() {
   local f
-  for f in unrouted escalated chain; do
+  for f in unrouted escalated; do
     run_loop "$TMP/$f.json" off ""
     if [ "$(claude_runs)" = 1 ]; then pass "ac1: flag unset, $f issue -> capable-model (claude) session started"
     else fail "ac1: flag unset, $f issue -> claude ran $(claude_runs) times (want 1). out: $(tail -5 "$W/out")"; fi
@@ -309,48 +301,6 @@ test_ac3_route_kind_rejects_intake_decision() {
   check_failure "story-labelled issue given an intake 'direct' decision"
   [ -z "$(chain_creates)" ] && pass "ac3': no chain built for invalid route-kind decision" || fail "ac3': chain built for invalid decision"
 }
-test_ac3_chain_without_skips_builds_five_stages() {
-  run_loop "$TMP/chain.json" ok "$CHAIN_NOSKIP"
-  local ok=1 why="" m c; c=$(chain_creates)
-  [ "$(claude_runs)" = 0 ] || { ok=0; why="$why claude session started;"; }
-  m=$(check_full_chain architect/design qa/tests engineer/implement qa/verify reviewer/review)
-  [ -z "$m" ] || { ok=0; why="$why chain incomplete:$m"; }
-  echo "$c" | grep -q "role:po" && { ok=0; why="$why a po stage was created;"; }
-  record | grep -q "$REASON" || { ok=0; why="$why reason not recorded on needs-chain issue;"; }
-  [ "$(jq -r '.[0].status' "$W/issues.json")" = closed ] || { ok=0; why="$why needs-chain issue not closed;"; }
-  [ "$ok" = 1 ] && pass "ac3': chain, no skips -> design/tests/implement/verify/review, no po, issue closed" || fail "ac3': chain no skips:$why (creates: $(echo "$c" | tr '\n' '|'))"
-}
-test_ac3_chain_skip_design() {
-  run_loop "$TMP/chain.json" ok "$CHAIN_SKIP_DESIGN"
-  local c ok=1 why=""; c=$(chain_creates)
-  echo "$c" | grep -q "stage:design" && { ok=0; why="$why design stage created;"; }
-  echo "$c" | grep -q "no-design" || { ok=0; why="$why implement lacks no-design label;"; }
-  for rs in qa/tests engineer/implement qa/verify reviewer/review; do echo "$c" | grep -q "role:${rs%%/*},stage:${rs##*/}" || { ok=0; why="$why missing $rs;"; }; done
-  [ "$ok" = 1 ] && pass "ac3': skip_design -> no design stage, implement marked no-design" || fail "ac3': skip_design:$why"
-}
-test_ac3_chain_skip_tests_honoured_when_tests_exist() {
-  S1_ORIGIN="$ORIGIN_T" run_loop "$TMP/chain.json" ok "$CHAIN_SKIP_TESTS"
-  local c ok=1 why=""; c=$(chain_creates)
-  echo "$c" | grep -q "stage:tests" && { ok=0; why="$why tests stage created;"; }
-  echo "$c" | grep -q "no-tests" || { ok=0; why="$why verify lacks no-tests label;"; }
-  for rs in architect/design engineer/implement qa/verify reviewer/review; do echo "$c" | grep -q "role:${rs%%/*},stage:${rs##*/}" || { ok=0; why="$why missing $rs;"; }; done
-  [ "$ok" = 1 ] && pass "ac3': skip_tests (tests/ non-empty) -> no tests stage, verify marked no-tests" || fail "ac3': skip_tests:$why"
-}
-test_ac3_chain_skip_tests_forced_off_when_tests_dir_empty() {
-  run_loop "$TMP/chain.json" ok "$CHAIN_SKIP_TESTS"   # default origin has no tests/
-  chain_creates | grep -q "stage:tests" && pass "ac3': skip_tests ignored when tests/ is empty (tests stage still created)" \
-    || fail "ac3': skip_tests honoured although tests/ is empty (creates: $(chain_creates | tr '\n' '|'))"
-}
-test_ac3_chain_old_schema_is_invalid() {
-  run_loop "$TMP/chain.json" ok '{"po":false,"include_po":false,"reason":"'"$REASON"'"}'
-  check_failure "chain: old po-stage schema (no skip_design/skip_tests)"
-  chain_creates | grep -q . && fail "ac3': chain built from invalid schema" || pass "ac3': no chain from invalid schema"
-}
-test_ac3_chain_non_boolean_skip_is_invalid() {
-  run_loop "$TMP/chain.json" ok '{"skip_design":"yes","skip_tests":false,"reason":"'"$REASON"'"}'
-  check_failure "chain: skip_design not a JSON boolean"
-}
-
 # ---------- AC4: endpoint/model/key from env; local and remote ----------
 test_ac4_request_uses_configured_model_and_endpoint_path() {
   run_loop "$TMP/unrouted.json" ok "$ROUTE_QA"
@@ -395,14 +345,11 @@ check_failure() {  # check_failure TAG [raw-output-marker]
 }
 test_ac5_unreachable() { run_loop "$TMP/unrouted.json" down ""; check_failure "unreachable endpoint (unrouted)"
                          run_loop "$TMP/escalated.json" down ""; check_failure "unreachable endpoint (needs-team-lead)"
-                         run_loop "$TMP/chain.json" down ""; check_failure "unreachable endpoint (needs-chain)"
                          run_loop "$TMP/intake.json" down ""; check_failure "unreachable endpoint (intake)"; }
 test_ac5_http_error() { run_loop "$TMP/unrouted.json" http500 ""; check_failure "HTTP 500"; }
 test_ac5_timeout() { run_loop "$TMP/unrouted.json" hang "" SYSTEM1_TIMEOUT=2 SYSTEM1_TIMEOUT_SECS=2 SYSTEM1_REQUEST_TIMEOUT=2; check_failure "timeout"; }
 test_ac5_garbage_output() { run_loop "$TMP/unrouted.json" garbage ""; check_failure "non-JSON output" GARBAGE-OUTPUT-73cw; }
 test_ac5_invalid_decision_value() { run_loop "$TMP/escalated.json" badvalue ""; check_failure "unknown role/stage" BADVALUE-73cw; }
-test_ac5_chain_garbage() { run_loop "$TMP/chain.json" garbage ""; check_failure "chain: non-JSON output" GARBAGE-OUTPUT-73cw
-                           chain_creates | grep -q . && fail "ac5: chain built despite invalid model output" || pass "ac5: no chain issues created on invalid output"; }
 test_ac5_flag_set_without_endpoint() {
   # flag on but URL/model not configured: must fail to needs-human, not silently fall back to claude
   W="$(mktemp -d "$TMP/run.XXXXXX")"; mkdir -p "$W/data/control" "$W/home"; : > "$W/bdlog"; : > "$W/claude_runs"
@@ -430,10 +377,6 @@ test_ac6_record_names_model_and_reason() {
   run_loop "$TMP/intake.json" ok "$INTAKE_PO"; r=$(record)
   if echo "$r" | grep -q "$MODEL_NAME" && echo "$r" | grep -q "$REASON"; then pass "ac6: intake decision record names model and reason"
   else fail "ac6: intake record lacks model/reason: $r"; fi
-  run_loop "$TMP/chain.json" ok "$CHAIN_SKIP_DESIGN"
-  local r; r=$(record)
-  if echo "$r" | grep -q "$MODEL_NAME" && echo "$r" | grep -q "$REASON"; then pass "ac6: chain decision record names model and reason"
-  else fail "ac6: chain record lacks model name and/or reason. record: $r"; fi
 }
 test_ac6_failure_note_names_model() {
   run_loop "$TMP/unrouted.json" garbage ""

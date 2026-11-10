@@ -138,8 +138,7 @@ next_issue() {
         | select(.id as $i | ($skip | split(" ") | index($i)) | not)
         | select( (((.labels // []) | index("needs-team-lead"))
                    and (((.assignee // "") == "") or (.assignee == $me) or stale_escalator))
-                  or ( ((((.labels // []) | any(startswith("role:"))) | not)
-                        or ((.labels // []) | index("needs-chain")))
+                  or ( (((.labels // []) | any(startswith("role:"))) | not)
                        and (((.assignee // "") == "") or (.assignee == $me)) ) ) ]
       | .[0].id // empty' 2>/dev/null
     return
@@ -160,7 +159,7 @@ next_issue() {
     def live_lease: ((.lease_expires_at // "") | if . == "" then false else (try (fromdateiso8601 > now) catch false) end);
     [ .[] | .[]?
       | select(lbl | index($role))
-      | select((lbl | (index("needs-human") != null or index("needs-team-lead") != null or index("needs-chain") != null)) | not)
+      | select((lbl | (index("needs-human") != null or index("needs-team-lead") != null)) | not)
       | select(.id as $i | ($skip | split(" ") | index($i)) | not)
       | select(((.assignee // "") == "") or (.assignee == $me)
                or (.assignee == "team-lead" and .id != $working and (blocked | not) and (live_lease | not))) ]
@@ -188,7 +187,7 @@ claim() {  # atomic claim when unassigned; resume if it was already ours
     [ "$(issue_field "$id" assignee)" = "$who" ] \
       && bd update "$id" --assignee "$AGENT_ID" --status in_progress --force >/dev/null 2>"$CLAIM_ERR"
   elif [ "$who" = team-lead ] && [ "$ROLE" != team-lead ] && has_label "$id" "role:$ROLE" \
-       && ! has_label "$id" needs-team-lead && ! has_label "$id" needs-chain && ! has_label "$id" needs-human \
+       && ! has_label "$id" needs-team-lead && ! has_label "$id" needs-human \
        && [ "$(team_lead_working_id)" != "$id" ] \
        && ! show_json "$id" | jq -e '(.lease_expires_at // "") as $l | $l != "" and (try ($l | fromdateiso8601 > now) catch false)' >/dev/null 2>&1; then
     # take over team-lead's leftover claim on an issue routed to this role (agent-factory-zf0i): same

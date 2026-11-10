@@ -22,13 +22,10 @@ as panes in one tmux window; `ops` — the shell you type into — is a separate
 1. You: `feature.sh "Title" "description"` (from the **ops** window). Creates an issue with no
    `role:*` label, so **team-lead**'s sweep triages it first - the same diagnosis it runs on any
    unrouted issue - and labels it `role:po` once it confirms it's a new, unfiled request.
-2. **po** writes `docs/stories/<id>.md` on branch `story/<id>` and files a `needs-chain` issue asking
-   **team-lead** to decide which stages the chain needs (favoring inclusion whenever it's unsure) and build
-   it with `new-story.sh`. For a fully complex story this creates two issues with no dependency on each
-   other - design (architect) and write-tests (qa, from the acceptance criteria only, not the design) - plus
-   implement (engineer, depends on design), verify (qa, depends on BOTH implement and write-tests) and review
-   (reviewer, depends on verify). Simple stories can skip design and/or write-tests (write-tests only when
-   existing tests already cover the behaviour); implement, verify and review are never skipped.
+2. **po** writes `docs/stories/<id>.md` on branch `story/<id>` and runs `new-story.sh`, which always builds
+   the full chain: two issues with no dependency on each other - design (architect) and write-tests
+   (qa, from the acceptance criteria only, not the design) - plus implement (engineer, depends on design),
+   verify (qa, depends on BOTH implement and write-tests) and review (reviewer, depends on verify).
 
 ```mermaid
 flowchart LR
@@ -122,7 +119,7 @@ a new `CLAUDE.md` or an appended section on your existing one) straight to your 
 
 By default team-lead is a full session on the most capable model. Set `SYSTEM1_ENABLED=1` in
 `.agent-factory/.env` and a small model (default `hf.co/LiquidAI/d1-2B`) instead makes team-lead's
-finite decisions - route an unrouted or `needs-team-lead` issue, size a `needs-chain` story's chain, or
+finite decisions - route an unrouted or `needs-team-lead` issue or
 send a no-story issue to po vs straight to a generated story - through `bin/system1.sh`. Any failure (unreachable, timeout, invalid answer) labels the
 issue `needs-human` with a note holding the raw model output; the capable model is not started. Every
 decision is recorded with `bd comment` naming the model, endpoint host and reason (see `bd show`).
@@ -149,7 +146,7 @@ Docker Desktop; install `docker-model-plugin` on Docker Engine), set `SYSTEM1_EN
 | Watch an agent | its pane in the `agents` window (rendered tool calls/text; Ctrl-b o to cycle, Ctrl-b q to jump by number); raw stream in `<project>/.agent-factory/logs/<role>/*.jsonl` (Claude Code) or `*.log` (Copilot CLI, plain text) |
 | Review-by-exception | `needs-human` list on the board; `bd show <id>` — the agent (or agent-loop.sh itself, on an attempt-cap/failure escalation) leaves a note on the issue explaining exactly what it needs; set `NOTIFY_URL` for push alerts |
 | Unstick an issue | answer what the issue's note asked for, then `approve.sh <id> -m "<answer>"` (or plain `approve.sh <id>`) |
-| Ask team-lead to triage a stuck issue | `bd label add <id> needs-team-lead` - it has its own pane in the `agents` window and picks the issue up on its next poll. It also picks up issues with no `role:*` label, and every new story's `needs-chain` sizing request, on its own, no hand-labelling needed; |
+| Ask team-lead to triage a stuck issue | `bd label add <id> needs-team-lead` - it has its own pane in the `agents` window and picks the issue up on its next poll. It also picks up issues with no `role:*` label, on its own, no hand-labelling needed; |
 | Pause / resume | `bin/stop.sh` (graceful) / `bin/stop.sh clear` then `bin/start.sh` — run from the same project directory |
 | Hard stop | `bin/stop.sh now` |
 | Restart one agent | `tmux list-panes -t factory:agents` for its index, then `tmux respawn-pane -k -t factory:agents.<index>` |

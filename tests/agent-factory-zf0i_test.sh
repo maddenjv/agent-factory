@@ -127,7 +127,7 @@ test_ac2_claim_still_works_for_unassigned_and_own() {
 
 test_ac3_needs_team_lead_or_chain_or_human_not_taken() {
   local lbl got out r
-  for lbl in needs-team-lead needs-chain needs-human; do
+  for lbl in needs-team-lead needs-human; do
     for r in $ROLES; do
       got=$(issue n1 in_progress team-lead "role:$r,$lbl" | run_next_issue $r)
       [ -z "$got" ] || { fail "ac3: $r selected team-lead-held issue labelled $lbl - got '$got'"; return; }
@@ -136,7 +136,7 @@ test_ac3_needs_team_lead_or_chain_or_human_not_taken() {
     { grep -q '^rc=1$' <<<"$out" && no_update "$out"; } \
       || { fail "ac3: qa claim() took over team-lead's $lbl issue - got: $out"; return; }
   done
-  pass "ac3: needs-team-lead / needs-chain / needs-human issues held by team-lead are not taken"
+  pass "ac3: needs-team-lead / needs-human issues held by team-lead are not taken"
 }
 
 test_ac4_other_agents_issue_not_taken() {
