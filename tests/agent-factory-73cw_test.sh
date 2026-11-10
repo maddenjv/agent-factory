@@ -165,7 +165,6 @@ run_loop() {
   W="$(mktemp -d "$TMP/run.XXXXXX")"; mkdir -p "$W/data/control" "$W/home" "$W/s1"
   : > "$W/bdlog"; : > "$W/claude_runs"; : > "$W/s1/requests.log"
   cp "$fixture" "$W/issues.json"
-  printf '{"idle":false,"reason":"t","assessed_at":"%s"}\n' "$(date -u +%FT%TZ)" > "$W/data/control/throttle.json"
   local url=""
   if [ "$mode" != off ] && [ "$mode" != down ]; then
     echo "$mode" > "$W/s1/mode"; printf '%s' "$reply" > "$W/s1/reply"
@@ -183,7 +182,7 @@ run_loop() {
   ( export W HOME="$W/home" CONTAINER_HOME="$W/home" "$@"
     if [ "$mode" != off ]; then export "$SYSTEM1_FLAG=1" "$SYSTEM1_URL_VAR=$url" "$SYSTEM1_MODEL_VAR=$MODEL_NAME"; fi
     PATH="$TMP/stubs:$PATH" ROLE=team-lead KIT_DIR="$KIT_DIR" PROJECT_DIR="$W" DATA_DIR="$W/data" ORIGIN="${S1_ORIGIN:-$ORIGIN}" \
-      PREFLIGHT=0 IDLE_SLEEP=1 MAX_ATTEMPTS_PER_ISSUE=1 MAX_CONSECUTIVE_FAILURES=1 THROTTLE_STALE_SECS=99999 \
+      PREFLIGHT=0 IDLE_SLEEP=1 MAX_ATTEMPTS_PER_ISSUE=1 MAX_CONSECUTIVE_FAILURES=1 \
       timeout 40 bash "$KIT_DIR/bin/agent-loop.sh" >"$W/out" 2>&1 ) || RC=$?
   kill "$WATCH" "${SRV:-}" 2>/dev/null; wait "$WATCH" "${SRV:-}" 2>/dev/null; SRV=""
 }
@@ -355,13 +354,12 @@ test_ac5_flag_set_without_endpoint() {
   # flag on but URL/model not configured: must fail to needs-human, not silently fall back to claude
   W="$(mktemp -d "$TMP/run.XXXXXX")"; mkdir -p "$W/data/control" "$W/home"; : > "$W/bdlog"; : > "$W/claude_runs"
   cp "$TMP/unrouted.json" "$W/issues.json"
-  printf '{"idle":false,"reason":"t","assessed_at":"%s"}\n' "$(date -u +%FT%TZ)" > "$W/data/control/throttle.json"
   ( for _ in $(seq 200); do grep -E '^bd (update|label|comment)' "$W/bdlog" | grep -qv -- '--claim' && break; [ -s "$W/claude_runs" ] && break; sleep 0.1; done
     sleep 2; touch "$W/data/control/STOP" ) & local wt=$!
   ( export W HOME="$W/home" CONTAINER_HOME="$W/home" "$SYSTEM1_FLAG=1"
     unset "$SYSTEM1_URL_VAR" "$SYSTEM1_MODEL_VAR" "$SYSTEM1_KEY_VAR"
     PATH="$TMP/stubs:$PATH" ROLE=team-lead KIT_DIR="$KIT_DIR" PROJECT_DIR="$W" DATA_DIR="$W/data" ORIGIN="$ORIGIN" \
-      PREFLIGHT=0 IDLE_SLEEP=1 MAX_ATTEMPTS_PER_ISSUE=1 MAX_CONSECUTIVE_FAILURES=1 THROTTLE_STALE_SECS=99999 \
+      PREFLIGHT=0 IDLE_SLEEP=1 MAX_ATTEMPTS_PER_ISSUE=1 MAX_CONSECUTIVE_FAILURES=1 \
       timeout 40 bash "$KIT_DIR/bin/agent-loop.sh" >"$W/out" 2>&1 ) || true
   kill "$wt" 2>/dev/null; wait "$wt" 2>/dev/null
   check_failure "flag set but endpoint/model unconfigured"

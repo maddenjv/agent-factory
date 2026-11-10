@@ -23,8 +23,6 @@ IDLE_SLEEP="${IDLE_SLEEP:-60}"
 MAX_ATTEMPTS_PER_ISSUE="${MAX_ATTEMPTS_PER_ISSUE:-2}"
 MAX_CONSECUTIVE_FAILURES="${MAX_CONSECUTIVE_FAILURES:-3}"
 CLAIM_SKIP_SECS="${CLAIM_SKIP_SECS:-600}"                # how long a failed-to-claim issue is skipped
-THROTTLE_STALE_SECS="${THROTTLE_STALE_SECS:-900}"       # how often team-lead re-assesses
-THROTTLE_ALERT_STALE_SECS="${THROTTLE_ALERT_STALE_SECS:-3600}"  # alert if it falls further behind than this
 DAILY_BUDGET_USD="${DAILY_BUDGET_USD:-}"
 PREFLIGHT="${PREFLIGHT:-1}"
 QUOTA_RETRY_INTERVAL="${QUOTA_RETRY_INTERVAL:-900}"  # fallback poll interval when a reset time can't be parsed
@@ -212,47 +210,24 @@ release_stale() {  # anything still in_progress under our name at startup is lef
       done
 }
 
-# ---------- throttles ----------
-# team-lead-driven WIP throttle (agent-factory-q4tj): po and architect - top-of-funnel - start new
-# work only while team-lead judges the engineer/qa/reviewer backlog has room and usage quota is
-# likely to last. team-lead is never throttled by this (it has to keep running to produce the
-# assessment), and engineer/qa/reviewer are never throttled by it either - only po/architect are
-# top-of-funnel. The judgment itself lives entirely in team-lead's own Claude Code session
-# (agents/team-lead.md's "Assess the po/architect throttle") - nothing here second-guesses it;
-# this is just the plumbing that reads its last recorded decision and keeps it fresh.
-THROTTLE_FILE="$CONTROL/throttle.json"
+# ---------- PO gate ----------
+# PO (top of the funnel) idles while the engineering queue is full: the number of ready
+# role:engineer issues (what `bd ready --label role:engineer` returns) >= MAX_READY_ENGINEER_ISSUES.
+# Deterministic, no model judgment. Other roles are never held back. Fails open.
+MAX_READY_ENGINEER_ISSUES="${MAX_READY_ENGINEER_ISSUES-5}"   # set-but-empty stays empty = no limit
+GATE_COUNT=0
 
-throttle_age() {  # seconds since the last recorded assessment, or a large number if there is none
-  local ts epoch
-  ts=$(jq -r '.assessed_at // empty' "$THROTTLE_FILE" 2>/dev/null)
-  [ -n "$ts" ] || { echo 999999; return; }
-  epoch=$(date -d "$ts" +%s 2>/dev/null) || { echo 999999; return; }
-  echo $(( $(date +%s) - epoch ))
+ready_engineer_count() {  # prints N, or returns 1 if it cannot be determined
+  local json
+  json=$(bd ready --label role:engineer --limit 1000 --json 2>>"$LOGDIR/bd-err.log") || return 1
+  printf '%s' "$json" | bd_unwrap | jq -e 'if type=="array" then length else error("not array") end' 2>/dev/null
 }
 
-throttle_ok() {  # false only for po/architect, and only once team-lead has recorded idle:true.
-                  # No assessment yet (fresh run, or team-lead falling behind) fails OPEN - po and
-                  # architect proceed. Deliberate: DAILY_BUDGET_USD and the Claude Code plan usage
-                  # limit (both enforced unconditionally elsewhere in this loop) are the hard stops
-                  # against runaway spend; this is a softer "don't start work you can't finish"
-                  # layer on top of those, and a missing/stale file must not silently wedge the
-                  # whole factory at the top of the funnel just because team-lead's own loop
-                  # hiccuped - see throttle_stale_alert() below for how a human finds out that
-                  # happened instead.
-  case "$ROLE" in po|architect) ;; *) return 0 ;; esac
-  [ -f "$THROTTLE_FILE" ] || return 0
-  jq -e '.idle != true' "$THROTTLE_FILE" >/dev/null 2>&1
-}
-
-throttle_stale_alert() {  # team-lead only, see main loop - alerts once when assessments stop
-                           # arriving, resets once they resume so a later real staleness re-alerts
-  local age; age=$(throttle_age)
-  if [ "$age" -ge "$THROTTLE_ALERT_STALE_SECS" ]; then
-    [ "$throttle_stale_alerted" = 1 ] || alert "throttle assessment stale (${age}s > ${THROTTLE_ALERT_STALE_SECS}s) - po/architect are running unthrottled in the meantime"
-    throttle_stale_alerted=1
-  else
-    throttle_stale_alerted=0
-  fi
+po_gate_ok() {  # false only for ROLE=po with a positive limit and count >= limit. Sets GATE_COUNT.
+  [ "$ROLE" = po ] || return 0
+  case "$MAX_READY_ENGINEER_ISSUES" in ''|0|*[!0-9]*) return 0 ;; esac
+  GATE_COUNT=$(ready_engineer_count) || return 0          # fail OPEN
+  [ "$GATE_COUNT" -lt "$MAX_READY_ENGINEER_ISSUES" ]
 }
 
 spent_today() { cat "$CONTROL"/cost/*."$(date +%F)" 2>/dev/null | awk '{s+=$1} END{printf "%.2f", s+0}'; }
@@ -344,11 +319,6 @@ build_prompt() {
   printf '\n\n---\nYour assigned issue: %s\nRepository: %s (your own clone; remote "origin"). Shared conventions are in CLAUDE.md.\nStart with: bd show %s\n' "$1" "$REPO" "$1"
 }
 
-build_throttle_prompt() {
-  cat "$KIT_DIR/agents/team-lead.md"
-  printf '\n\n---\nNo bd issue this session: assess the po/architect throttle now (see "Assess the po/architect throttle" above), then record it with bin/set-throttle.sh - that is the only place this decision is recorded, so do not skip it.\nRepository: %s (your own clone; remote "origin"). Shared conventions are in CLAUDE.md. KIT_DIR=%s PROJECT_DIR=%s\n' "$REPO" "$KIT_DIR" "$PROJECT_DIR"
-}
-
 harness_error_excerpt() {  # harness_error_excerpt ERRFILE OUTFILE -> <=200-char single-line error text, or empty
   local e
   e=$(one_line "$(head -c 2000 "$1" 2>/dev/null)" | cut -c1-200)
@@ -373,8 +343,7 @@ failure_cause() {  # -> why the last harness session failed, from LAST_RUN_RC / 
 
 run_harness_session() {  # run_harness_session LOGNAME PROMPT -> sets LAST_RUN_QUOTA_MSG (empty
                          # unless this run hit a usage limit), LAST_RUN_RC (harness exit status) and
-                         # LAST_RUN_ERR (error excerpt); shared by run_agent() (one bd issue)
-                         # and run_throttle_assessment() (no bd issue).
+                         # LAST_RUN_ERR (error excerpt); used by run_agent() (one bd issue).
   local logname=$1 prompt=$2 logfile errfile outfile cost
   errfile=$(mktemp); outfile=$(mktemp)
   LAST_RUN_RC=0; LAST_RUN_ERR=""
@@ -443,7 +412,6 @@ run_agent() {  # sets LAST_RUN_QUOTA_MSG
   run_harness_session "$1" "$(build_prompt "$1")"
   unset SESSION_MODEL
 }
-run_throttle_assessment() { run_harness_session throttle "$(build_throttle_prompt)"; }  # sets LAST_RUN_QUOTA_MSG
 
 # ---------- outcome handling ----------
 is_conflict_rework() { has_label "$1" stage:rework && has_label "$1" merge-conflict; }
@@ -577,39 +545,25 @@ log "started: role=$ROLE harness=$HARNESS model=${MODEL:-<harness default>} max_
 # ---------- main loop ----------
 fails=0
 idle_logged=0
-throttle_idle_logged=0
-throttle_stale_alerted=0
+gate_idle_logged=0
 while :; do
   if stopping; then log "STOP requested; exiting"; exit 0; fi
   if ! budget_ok; then alert "daily budget reached ($(spent_today) USD); pausing 30 min"; sleep 1800; continue; fi
 
-  [ "$ROLE" = "team-lead" ] && throttle_stale_alert
-
-  if ! throttle_ok; then
-    if [ "$throttle_idle_logged" != 1 ]; then
-      log "idle: team-lead throttle holding $ROLE back ($(jq -r '.reason // "no reason recorded"' "$THROTTLE_FILE" 2>/dev/null))"
-      throttle_idle_logged=1
+  if ! po_gate_ok; then
+    if [ "$gate_idle_logged" != 1 ]; then
+      log "idle: engineering queue full ($GATE_COUNT ready role:engineer issues >= MAX_READY_ENGINEER_ISSUES=$MAX_READY_ENGINEER_ISSUES)"
+      gate_idle_logged=1
     fi
+    mkdir -p "$CONTROL/state"
+    printf '%s %s\n' "$GATE_COUNT" "$MAX_READY_ENGINEER_ISSUES" > "$CONTROL/state/po-gate"
     sleep "$IDLE_SLEEP"; continue
   fi
-  throttle_idle_logged=0
+  if [ "$gate_idle_logged" = 1 ]; then rm -f "$CONTROL/state/po-gate"; fi
+  gate_idle_logged=0
 
   id=$(next_issue)
   if [ -z "$id" ]; then
-    if [ "$ROLE" = "team-lead" ] && [ "$(throttle_age)" -ge "$THROTTLE_STALE_SECS" ]; then
-      log "no triage work; throttle assessment due (last one $(throttle_age)s ago)"
-      if sync_repo; then
-        run_throttle_assessment
-        if [ -n "$LAST_RUN_QUOTA_MSG" ]; then
-          wait_s=$(usage_limit_wait_seconds "$LAST_RUN_QUOTA_MSG")
-          alert "throttle assessment: usage limit hit ($LAST_RUN_QUOTA_MSG); waiting ${wait_s}s"
-          sleep "$wait_s"; continue
-        fi
-      else
-        log "git sync failed; throttle assessment skipped this cycle"
-      fi
-      sleep "$IDLE_SLEEP"; continue
-    fi
     [ "$idle_logged" = 1 ] || { log "queue empty; idling"; idle_logged=1; }
     sleep "$IDLE_SLEEP"; continue
   fi
