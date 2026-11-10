@@ -71,6 +71,19 @@ else
   grep -q '^HARNESS=' "$AGENT_ENV_FILE" || echo "HARNESS=claude-code" >> "$AGENT_ENV_FILE"
 fi
 
+# System 1 (agent-factory-73cw): with SYSTEM1_ENABLED=1 and SYSTEM1_LOCAL=1, pull the model via
+# Docker Model Runner. Anything else (flag unset, or a remote endpoint) touches no `docker model`.
+s1_val() { grep -E "^$1=" "$AGENT_ENV_FILE" | tail -1 | cut -d= -f2- | sed -E 's/^["'"'"']|["'"'"']$//g'; }
+if [ "$(s1_val SYSTEM1_ENABLED)" = 1 ] && [ "$(s1_val SYSTEM1_LOCAL)" = 1 ]; then
+  s1_model="$(s1_val SYSTEM1_MODEL)"; s1_model="${s1_model:-hf.co/LiquidAI/d1-2B}"
+  if ! docker model version >/dev/null 2>&1; then
+    echo "error: SYSTEM1_LOCAL=1 needs Docker Model Runner ('docker model' is unavailable). Enable it in Docker Desktop, or install docker-model-plugin on Docker Engine, then re-run bin/init.sh." >&2
+    exit 1
+  fi
+  echo "Pulling System 1 model $s1_model via Docker Model Runner..."
+  docker model pull "$s1_model" || { echo "error: docker model pull $s1_model failed" >&2; exit 1; }
+fi
+
 # .agent-factory/ is excluded: this script creates it (untracked until init-project.sh
 # gitignores it), so it must not make a re-run look "dirty". bin/init-project.sh commits scaffolding directly to main
 # on your behalf next, using explicit paths only - this just makes sure that isn't quietly

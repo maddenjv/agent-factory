@@ -61,6 +61,7 @@ services:
       KIT_DIR: ${KIT_DIR}
       PROJECT_DIR: ${PROJECT_DIR}
     init: true
+    extra_hosts: ["host.docker.internal:host-gateway"]   # System 1 default URL (Docker Model Runner on the host)
     depends_on: [dolt]
     networks: [factory]
     volumes:

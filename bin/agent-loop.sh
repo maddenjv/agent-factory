@@ -405,7 +405,16 @@ run_harness_session() {  # run_harness_session LOGNAME PROMPT -> sets LAST_RUN_Q
   rm -f "$errfile" "$outfile"
 }
 
-run_agent() { run_harness_session "$1" "$(build_prompt "$1")"; }               # sets LAST_RUN_QUOTA_MSG
+run_agent() {  # sets LAST_RUN_QUOTA_MSG
+  if [ "$ROLE" = team-lead ] && [ "${SYSTEM1_ENABLED:-}" = 1 ]; then
+    # System 1 mode (agent-factory-73cw): a small model makes the one finite decision; no harness
+    # session. system1.sh always leaves the issue in a terminal state (needs-human on any failure).
+    LAST_RUN_QUOTA_MSG=""; LAST_RUN_RC=0; LAST_RUN_ERR=""
+    ( cd "$REPO" && REPO="$REPO" KIT_DIR="$KIT_DIR" "$KIT_DIR/bin/system1.sh" "$1" ) >>"$LOGDIR/loop.log" 2>&1
+    return 0
+  fi
+  run_harness_session "$1" "$(build_prompt "$1")"
+}
 run_throttle_assessment() { run_harness_session throttle "$(build_throttle_prompt)"; }  # sets LAST_RUN_QUOTA_MSG
 
 # ---------- outcome handling ----------
