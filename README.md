@@ -118,6 +118,31 @@ moment). It commits initial scaffolding (`docs/stories/`, `docs/design/`, beads 
 a new `CLAUDE.md` or an appended section on your existing one) straight to your project's `main`
 — it refuses to run at all if your project isn't already clean on `main` first.
 
+## System 1 team-lead (optional)
+
+By default team-lead is a full session on the most capable model. Set `SYSTEM1_ENABLED=1` in
+`.agent-factory/.env` and a small model (default `hf.co/LiquidAI/d1-2B`) instead makes team-lead's
+finite decisions - route an unrouted or `needs-team-lead` issue, size a `needs-chain` story's chain, or
+send a no-story issue to po vs straight to a generated story - through `bin/system1.sh`. The throttle
+assessment still uses the capable model. Any failure (unreachable, timeout, invalid answer) labels the
+issue `needs-human` with a note holding the raw model output; the capable model is not started. Every
+decision is recorded with `bd comment` naming the model, endpoint host and reason (see `bd show`).
+
+| Variable | Meaning |
+|---|---|
+| `SYSTEM1_ENABLED` | `1` to enable; unset = today's behaviour |
+| `SYSTEM1_URL` | OpenAI-compatible base URL incl. `/v1` (requests go to `<url>/chat/completions`). Default `http://host.docker.internal:12434/engines/v1` (Docker Model Runner on the host) |
+| `SYSTEM1_MODEL` | model name (default `hf.co/LiquidAI/d1-2B`) |
+| `SYSTEM1_API_KEY` | optional Bearer key for a hosted endpoint |
+| `SYSTEM1_TIMEOUT` | request timeout in seconds (default 60) |
+| `SYSTEM1_LOCAL` | `1` = `bin/init.sh` runs `docker model pull $SYSTEM1_MODEL` |
+
+**Local:** enable Docker Model Runner with TCP (`docker desktop enable model-runner --tcp 12434` on
+Docker Desktop; install `docker-model-plugin` on Docker Engine), set `SYSTEM1_ENABLED=1` and
+`SYSTEM1_LOCAL=1`, and run `bin/init.sh` (it pulls the model; with the flag unset nothing is pulled).
+**Remote:** set `SYSTEM1_ENABLED=1`, `SYSTEM1_URL`, `SYSTEM1_MODEL` and `SYSTEM1_API_KEY`; leave
+`SYSTEM1_LOCAL` unset.
+
 ## Day to day
 | Want to | Do |
 |---|---|
