@@ -28,9 +28,11 @@ where I can see what the model is missing.
    `needs-team-lead` issue, then the System 1 model is asked for a single decision and the issue ends up
    labelled for the chosen role/stage (stale claim released) or `needs-human`, with a `bd comment` recording
    the decision and its reason.
-3. Given the flag is set, when team-lead picks up a `needs-chain` issue, then the System 1 model decides
-   whether the chain includes a PO stage and the chain is built accordingly (no PO stage when the issue has
-   enough context; architect, engineer, qa and reviewer stages are still present).
+3. Given the flag is set, when team-lead picks up an unrouted issue with no story, then the System 1 model
+   decides `po` (route to po as today), `direct` (no PO: a script builds the story from the issue text and
+   the full design/tests/implement/verify/review chain) or `human`; and given a `needs-chain` issue, the model
+   decides only `skip_design` / `skip_tests` (same rule as `agents/team-lead.md`) and the script builds the chain.
+   (Re-read per docs/design/agent-factory-73cw.md: a chain never has a PO stage.)
 4. Given the endpoint is a local Docker Model Runner instance, then it works; given it is a remote hosted
    endpoint with an API key configured, then it works equally - the endpoint URL, model name and optional key
    are all configurable via `.env`.
