@@ -33,6 +33,13 @@ remains, and records that judgment - with a reason - in `.agent-factory/control/
 `engineer`/`qa`/`reviewer` are never throttled by it, and a missing/stale file fails open (see
 `docs/design/agent-factory-q4tj.md`'s Error cases) rather than wedging the whole factory.
 
+Since `agent-factory-73cw`, an optional **System 1** mode (`SYSTEM1_ENABLED=1`) makes team-lead's
+issue-driven decisions (route an unrouted/`needs-team-lead` issue, size a `needs-chain` story, or send a
+no-story issue to po vs straight to a script-generated story) with a small OpenAI-compatible chat model
+(Docker Model Runner locally, or a hosted endpoint) via `bin/system1.sh`, instead of a harness session;
+any failure labels the issue `needs-human`. Throttle assessment still uses the capable model. See
+`docs/design/agent-factory-73cw.md`.
+
 ## Stack
 - **Orchestration**: `bash` scripts under `bin/` (`lib.sh` holds shared helpers; every other
   script sources it). No other scripting language is introduced without a strong reason.
