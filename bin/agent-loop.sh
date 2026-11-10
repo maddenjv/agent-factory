@@ -58,6 +58,7 @@ fi
 model_key="${ROLE^^}"; model_key="${model_key//-/_}"
 model_var="MODEL_${model_key}"
 MODEL="${!model_var:-}"
+MODEL_PINNED=0; [ -n "$MODEL" ] && MODEL_PINNED=1   # explicit MODEL_<ROLE>: wins, System 1 not consulted
 if [ -z "$MODEL" ]; then
   if [ "$ROLE" = "team-lead" ]; then MODEL="$TIER_TEAM_LEAD"; else MODEL="$TIER_STANDARD"; fi
 fi
@@ -380,7 +381,7 @@ run_harness_session() {  # run_harness_session LOGNAME PROMPT -> sets LAST_RUN_Q
   if [ "$HARNESS" = "copilot" ]; then
     logfile="$LOGDIR/$(date +%F).$logname.log"   # plain text, not stream-json - see README
     local args=(-p "$prompt" --allow-all-tools --no-ask-user -s --add-dir "$KIT_DIR")
-    [ -n "$MODEL" ] && args+=(--model "$MODEL")
+    [ -n "${SESSION_MODEL-$MODEL}" ] && args+=(--model "${SESSION_MODEL-$MODEL}")
     ( cd "$REPO" && timeout "$ITERATION_TIMEOUT" copilot "${args[@]}" 2>"$errfile" ) \
       | tee -a "$logfile" "$outfile"
     LAST_RUN_RC=${PIPESTATUS[0]}
@@ -390,7 +391,7 @@ run_harness_session() {  # run_harness_session LOGNAME PROMPT -> sets LAST_RUN_Q
     logfile="$LOGDIR/$(date +%F).$logname.jsonl"
     local args=(-p "$prompt" --dangerously-skip-permissions --max-turns "$MAX_TURNS"
                 --output-format stream-json --verbose)
-    [ -n "$MODEL" ] && args+=(--model "$MODEL")
+    [ -n "${SESSION_MODEL-$MODEL}" ] && args+=(--model "${SESSION_MODEL-$MODEL}")
     ( cd "$REPO" && timeout "$ITERATION_TIMEOUT" claude "${args[@]}" 2>"$errfile" ) \
       | tee -a "$logfile" "$outfile" | jq -R -r --unbuffered "$RENDER" 2>/dev/null
     LAST_RUN_RC=${PIPESTATUS[0]}
@@ -404,6 +405,32 @@ run_harness_session() {  # run_harness_session LOGNAME PROMPT -> sets LAST_RUN_Q
   rm -f "$errfile" "$outfile"
 }
 
+choose_model() {  # choose_model ID -> sets SESSION_MODEL, logs one line (agent-factory-hcql)
+  local id=$1 class="" src="" m errtmp reason ckey
+  if [ "$MODEL_PINNED" = 1 ]; then
+    SESSION_MODEL=$MODEL; log "model: $id class=- source=pinned($model_var) model=$MODEL"; return 0
+  fi
+  if [ -z "${MODEL_HIGH:-}${MODEL_MEDIUM:-}${MODEL_LOW:-}" ]; then
+    SESSION_MODEL=$MODEL; log "model: $id class=- source=default (no class models set) model=${MODEL:-<harness default>}"; return 0
+  fi
+  if [ "${SYSTEM1_ENABLED:-}" = 1 ]; then
+    errtmp=$(mktemp)
+    if class=$( cd "$REPO" 2>/dev/null; "$KIT_DIR/bin/system1-class.sh" "$id" 2>"$errtmp" ) && [ -n "$class" ]; then
+      src=system1
+    else
+      reason=$(one_line "$(head -c 300 "$errtmp")"); class=medium; src="fallback(${reason:-no reason})"
+    fi
+    rm -f "$errtmp"
+  else
+    class=medium; src="fallback(system1 disabled)"
+  fi
+  ckey="MODEL_${class^^}"; m="${!ckey:-}"
+  if [ -n "$m" ]; then
+    SESSION_MODEL=$m; log "model: $id class=$class source=$src model=$m"
+  else
+    SESSION_MODEL=$MODEL; log "model: $id class=$class source=$src model=<default: ${MODEL:-harness default}> ($ckey empty, using role default)"
+  fi
+}
 run_agent() {  # sets LAST_RUN_QUOTA_MSG
   if [ "$ROLE" = team-lead ] && [ "${SYSTEM1_ENABLED:-}" = 1 ]; then
     # System 1 mode (agent-factory-73cw): a small model makes the one finite decision; no harness
@@ -412,7 +439,9 @@ run_agent() {  # sets LAST_RUN_QUOTA_MSG
     ( cd "$REPO" && REPO="$REPO" KIT_DIR="$KIT_DIR" "$KIT_DIR/bin/system1.sh" "$1" ) >>"$LOGDIR/loop.log" 2>&1
     return 0
   fi
+  choose_model "$1"
   run_harness_session "$1" "$(build_prompt "$1")"
+  unset SESSION_MODEL
 }
 run_throttle_assessment() { run_harness_session throttle "$(build_throttle_prompt)"; }  # sets LAST_RUN_QUOTA_MSG
 
