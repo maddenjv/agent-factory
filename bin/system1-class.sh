@@ -8,8 +8,8 @@ set -uo pipefail
 # shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/bdjson.sh"
 
-SYSTEM1_URL="${SYSTEM1_URL:-http://host.docker.internal:12434/engines/v1}"
-SYSTEM1_MODEL="${SYSTEM1_MODEL:-hf.co/LiquidAI/d1-2B}"
+SYSTEM1_URL="${SYSTEM1_URL:-http://host.docker.internal:12434/v1}"
+SYSTEM1_MODEL="${SYSTEM1_MODEL:-LiquidAI/d1-2B}"
 SYSTEM1_API_KEY="${SYSTEM1_API_KEY:-}"
 SYSTEM1_TIMEOUT="${SYSTEM1_TIMEOUT:-60}"
 CAP=6000

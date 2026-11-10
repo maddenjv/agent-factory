@@ -2,7 +2,7 @@
 # Usage: system1.sh <issue-id>
 # "System 1" team-lead (agent-factory-73cw): when SYSTEM1_ENABLED=1, bin/agent-loop.sh runs this
 # instead of a capable-model team-lead session for an issue-driven decision. A small model (served by
-# an OpenAI-compatible chat API: Docker Model Runner locally, or any hosted endpoint) is asked for ONE
+# an OpenAI-compatible chat API: vLLM locally, or any hosted endpoint) is asked for ONE
 # JSON decision; this script validates it and applies it with bd/git. Any failure -> needs-human with
 # a note (never the capable-model session). See docs/design/agent-factory-73cw.md.
 set -uo pipefail
@@ -11,8 +11,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/bdjson.sh"
 
 KIT_DIR="${KIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 REPO="${REPO:-$PWD}"
-SYSTEM1_URL="${SYSTEM1_URL:-http://host.docker.internal:12434/engines/v1}"
-SYSTEM1_MODEL="${SYSTEM1_MODEL:-hf.co/LiquidAI/d1-2B}"
+SYSTEM1_URL="${SYSTEM1_URL:-http://host.docker.internal:12434/v1}"
+SYSTEM1_MODEL="${SYSTEM1_MODEL:-LiquidAI/d1-2B}"
 SYSTEM1_API_KEY="${SYSTEM1_API_KEY:-}"
 SYSTEM1_TIMEOUT="${SYSTEM1_TIMEOUT:-60}"
 CAP=6000
