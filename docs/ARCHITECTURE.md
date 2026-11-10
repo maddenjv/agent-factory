@@ -24,20 +24,16 @@ when it reroutes to a role. Conversely (`agent-factory-zf0i`), a role also picks
 the correct role/stage, fixes it directly, routes a no-story-context issue to `role:po`, sizes a
 new story's chain, or escalates to `needs-human` - see `agents/team-lead.md`. It runs on the most
 capable model tier (`agent-factory-250`) and has its own pane in `bin/start.sh`'s tmux layout
-(`agent-factory-uhc`). Since `agent-factory-q4tj`, it also runs a fourth, issue-less kind of session
-on a timer (`THROTTLE_STALE_SECS`, default 900s): it judges whether `po`/`architect` should keep
-starting new top-of-funnel work, based on how deep the `engineer`/`qa`/`reviewer` backlog has grown
-(including stories that only have a `needs-chain` issue open) and how much usage quota/budget
-remains, and records that judgment - with a reason - in `.agent-factory/control/throttle.json`
-(`bin/set-throttle.sh`). `bin/agent-loop.sh`'s `throttle_ok()` reads it for `po`/`architect` only;
-`engineer`/`qa`/`reviewer` are never throttled by it, and a missing/stale file fails open (see
-`docs/design/agent-factory-q4tj.md`'s Error cases) rather than wedging the whole factory.
+(`agent-factory-uhc`). Throttling is not team-lead's job (`agent-factory-hr7o`): `bin/agent-loop.sh`'s `po_gate_ok()` holds only
+`po` back while the number of ready `role:engineer` issues (`bd ready --label role:engineer`) is at least
+`MAX_READY_ENGINEER_ISSUES` (default 5; `0`/empty = no limit; an undeterminable count fails open). The idle
+state is logged once and shown on the board. See `docs/design/agent-factory-hr7o.md`.
 
 Since `agent-factory-73cw`, an optional **System 1** mode (`SYSTEM1_ENABLED=1`) makes team-lead's
 issue-driven decisions (route an unrouted/`needs-team-lead` issue, size a `needs-chain` story, or send a
 no-story issue to po vs straight to a script-generated story) with a small OpenAI-compatible chat model
 (Docker Model Runner locally, or a hosted endpoint) via `bin/system1.sh`, instead of a harness session;
-any failure labels the issue `needs-human`. Throttle assessment still uses the capable model. See
+any failure labels the issue `needs-human`. See
 `docs/design/agent-factory-73cw.md`.
 
 ## Stack
