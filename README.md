@@ -118,7 +118,7 @@ a new `CLAUDE.md` or an appended section on your existing one) straight to your 
 ## System 1 team-lead (optional)
 
 By default team-lead is a full session on the most capable model. Set `SYSTEM1_ENABLED=1` in
-`.agent-factory/.env` and a small model (default `LiquidAI/d1-2B`) instead makes team-lead's
+`.agent-factory/.env` and a small model (default `hf.co/ggml-org/vllm-d3-mini-GGUF`) instead makes team-lead's
 finite decisions - route an unrouted or `needs-team-lead` issue or
 send a no-story issue to po vs straight to a generated story - through `bin/system1.sh`. Any failure (unreachable, timeout, invalid answer) labels the
 issue `needs-human` with a note holding the raw model output; the capable model is not started. Every
@@ -127,11 +127,11 @@ decision is recorded with `bd comment` naming the model, endpoint host and reaso
 | Variable | Meaning |
 |---|---|
 | `SYSTEM1_ENABLED` | `1` to enable; unset = today's behaviour |
-| `SYSTEM1_URL` | OpenAI-compatible base URL incl. `/v1` (requests go to `<url>/chat/completions`). Default `http://host.docker.internal:12434/v1` (the local vLLM container on the host) |
-| `SYSTEM1_MODEL` | model name (default `LiquidAI/d1-2B`) |
+| `SYSTEM1_URL` | OpenAI-compatible base URL (requests go to `<url>/chat/completions`). Default `http://host.docker.internal:12434/engines/v1/systemone` (Docker Model Runner on the host) |
+| `SYSTEM1_MODEL` | model name (default `hf.co/ggml-org/vllm-d3-mini-GGUF`) |
 | `SYSTEM1_API_KEY` | optional Bearer key for a hosted endpoint |
 | `SYSTEM1_TIMEOUT` | request timeout in seconds (default 60) |
-| `SYSTEM1_LOCAL` | `1` = `bin/init.sh` runs `vllm/vllm-openai:latest` serving `$SYSTEM1_MODEL` (container `factory-system1`, port 12434) |
+| `SYSTEM1_LOCAL` | `1` = `bin/init.sh` runs `docker model pull $SYSTEM1_MODEL` (Docker Model Runner, llama.cpp backend) |
 | `MODEL_HIGH` / `MODEL_MEDIUM` / `MODEL_LOW` | harness model names for the per-task model class (below); empty = unset |
 
 **Per-task model class.** With the three class models set, each session in any role first asks System 1
@@ -141,11 +141,10 @@ uses `MODEL_MEDIUM` (the loop log records the fallback and reason); if the chose
 the role's default model is used. An explicit `MODEL_<ROLE>` wins and skips System 1. Each choice is logged
 as `model: <issue> class=... source=... model=...`.
 
-**Local:** set `SYSTEM1_ENABLED=1` and `SYSTEM1_LOCAL=1` and run `bin/init.sh`. It starts the
-`vllm/vllm-openai:latest` container `factory-system1` serving `SYSTEM1_MODEL` on port 12434 (needs Docker;
-NVIDIA container toolkit for GPU; optional `HF_TOKEN` for gated models). The first start downloads the
-model: follow with `docker logs -f factory-system1`. Re-running `bin/init.sh` is safe; stop it with
-`docker rm -f factory-system1`. With the flag unset nothing is started.
+**Local:** enable Docker Model Runner (llama.cpp is its backend) with TCP on port 12434 -
+`docker desktop enable model-runner --tcp 12434` on Docker Desktop, or install `docker-model-plugin` on
+Docker Engine - then set `SYSTEM1_ENABLED=1` and `SYSTEM1_LOCAL=1` and run `bin/init.sh`. It pulls
+`SYSTEM1_MODEL` with `docker model pull`; re-running is safe. With the flag unset nothing is pulled.
 **Remote:** set `SYSTEM1_ENABLED=1`, `SYSTEM1_URL`, `SYSTEM1_MODEL` and `SYSTEM1_API_KEY`; leave
 `SYSTEM1_LOCAL` unset.
 

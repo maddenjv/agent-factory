@@ -61,7 +61,7 @@ services:
       KIT_DIR: ${KIT_DIR}
       PROJECT_DIR: ${PROJECT_DIR}
     init: true
-    extra_hosts: ["host.docker.internal:host-gateway"]   # System 1 default URL (vLLM container on the host, port 12434)
+    extra_hosts: ["host.docker.internal:host-gateway"]   # System 1 default URL (Docker Model Runner on the host, port 12434)
     depends_on: [dolt]
     networks: [factory]
     volumes:
