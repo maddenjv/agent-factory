@@ -42,6 +42,8 @@ classify() {
     if [ -n "$(label_with_prefix story:)" ]; then KIND=route; else KIND=intake; fi
   else KIND=route   # routed already, no escalation: treat as a routing question
   fi
+  # QID must be set here: questions_json runs in a $(...) subshell in ask_model
+  if [ "$KIND" = intake ]; then QID=intake; else QID=route; fi
 }
 
 questions_json() {  # KIND -> the single typed choice question (instructions + criteria)
