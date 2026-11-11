@@ -61,7 +61,7 @@ services:
       KIT_DIR: ${KIT_DIR}
       PROJECT_DIR: ${PROJECT_DIR}
     init: true
-    extra_hosts: ["host.docker.internal:host-gateway"]   # System 1 default URL (Docker Model Runner on the host, port 12434)
+    extra_hosts: ["host.docker.internal:host-gateway"]   # System 1 default URL (llama.cpp container published on the host, port 8080)
     depends_on: [dolt]
     networks: [factory]
     volumes:
