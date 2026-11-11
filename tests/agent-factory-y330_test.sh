@@ -24,7 +24,7 @@ command -v python3 >/dev/null || { echo "SKIP: python3 missing"; exit 0; }
 command -v jq >/dev/null || { echo "SKIP: jq missing"; exit 0; }
 
 TMP="$(mktemp -d)"; trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$TMP"' EXIT
-mkdir -p "$TMP/stubs"
+mkdir -p "$TMP/stubs" "$TMP/initstubs"
 
 # ============ docker / init.sh harness ============
 cat > "$TMP/stubs/docker" <<'STUB'
@@ -38,11 +38,13 @@ case "$1" in
     name=""; prev=""
     for a in "$@"; do [ "$prev" = --name ] && name=$a; case "$a" in --name=*) name=${a#--name=};; esac; prev=$a; done
     if [ -n "$name" ] && grep -qxF "$name" "$C"; then echo "docker: Conflict. The container name \"$name\" is already in use" >&2; exit 125; fi
-    [ -n "$name" ] && echo "$name" >> "$C"; echo "abc123"; exit 0 ;;
+    [ -n "$name" ] && echo "$name" >> "$C"; printf '%s' "$*" > "$DSTATE/args"; echo "abc123"; exit 0 ;;
   ps|container) cat "$C"; exit 0 ;;
   inspect)
-    for a in "$@"; do grep -qxF "$a" "$C" && { echo true; exit 0; }; done
+    for a in "$@"; do grep -qxF "$a" "$C" && { echo "true|$(cat "$DSTATE/args" 2>/dev/null)"; exit 0; }; done
     echo "Error: No such object" >&2; exit 1 ;;
+  rm)
+    for a in "$@"; do grep -vxF "$a" "$C" > "$C.tmp"; mv "$C.tmp" "$C"; done; exit 0 ;;
   start|restart) exit 0 ;;
   compose)
     case " $* " in *" run "*) ( cd "$PROJECT_DIR" && { echo ".agent-factory/" >> .gitignore; git add .gitignore && git commit -q -m s; } );; esac
@@ -50,12 +52,12 @@ case "$1" in
   *) exit 0 ;;
 esac
 STUB
-cat > "$TMP/stubs/curl" <<'STUB'
+cat > "$TMP/initstubs/curl" <<'STUB'
 #!/usr/bin/env bash
 echo "curl $*" >> "${DOCKER_LOG:-/dev/null}"
 echo '{"status":"ok"}'; exit 0
 STUB
-chmod +x "$TMP/stubs/docker" "$TMP/stubs/curl"
+chmod +x "$TMP/stubs/docker" "$TMP/initstubs/curl"
 
 run_init() {  # run_init "<env lines>" [DSTATE] -> INIT_OUT INIT_RC DLOG DSTATE
   local kit proj
@@ -72,7 +74,7 @@ run_init() {  # run_init "<env lines>" [DSTATE] -> INIT_OUT INIT_RC DLOG DSTATE
 }
 rerun_init() {
   INIT_RC=0
-  INIT_OUT=$(cd "$PROJ" && DSTATE="$DSTATE" DOCKER_LOG="$DLOG" PATH="$TMP/stubs:$PATH" PROJECT_DIR="$PROJ" HOME="$TMP/home" "$KIT/bin/init.sh" 2>&1) || INIT_RC=$?
+  INIT_OUT=$(cd "$PROJ" && DSTATE="$DSTATE" DOCKER_LOG="$DLOG" PATH="$TMP/stubs:$TMP/initstubs:$PATH" PROJECT_DIR="$PROJ" HOME="$TMP/home" "$KIT/bin/init.sh" 2>&1) || INIT_RC=$?
 }
 runs() { grep -E '^docker run ' "$DLOG"; }
 LOCAL_ON="SYSTEM1_ENABLED=1\nSYSTEM1_LOCAL=1\n"
@@ -206,18 +208,19 @@ cat > "$TMP/eng.json" <<'JSON'
 [{"id":"t-1","title":"story-x: implement widget","description":"Implement the widget. ISSUE-MARKER-y330","status":"open","assignee":"","labels":["role:engineer","stage:implement","story:story-x"]}]
 JSON
 
-# fat OBJECT-JSON -> reply carrying the decision at top level, under wrapper keys, and chat-style
-fat() { jq -nc --argjson o "$1" '$o + {answers:$o, result:$o, response:$o, output:$o, choices:[{index:0,finish_reason:"stop",message:{role:"assistant",content:($o|tojson)}}]}'; }
-ROUTE_REPLY='{"decision":"route","role":"architect","stage":"design","reason":"needs design"}'
-PO_REPLY='{"decision":"po","reason":"needs a story"}'
-cls() { printf '{"class":"%s","model_class":"%s","complexity":"%s","decision":"%s","reason":"r"}' "$1" "$1" "$1" "$1"; }
+# ans QID CHOICE -> design-contract reply {"answers":{"<qid>":{"choice":..,"confidence":..}}}
+ans() { printf '{"answers":{"%s":{"choice":"%s","probabilities":{},"confidence":0.9}},"usage":{}}' "$1" "$2"; }
+ROUTE_REPLY=$(ans route architect/design)
+PO_REPLY=$(ans intake po)
+HUMAN_REPLY=$(ans route human)
+cls() { ans class "$1"; }
 
 # start_server MODE REPLYOBJ -> sets W, S1URL(host:port), launches server
 start_server() {
   W="$(mktemp -d "$TMP/run.XXXXXX")"; mkdir -p "$W/data/control" "$W/home" "$W/s1"
   : > "$W/bdlog"; : > "$W/claude_args"; : > "$W/s1/requests.log"
   echo "$1" > "$W/s1/mode"
-  if [ "${3:-}" = raw ]; then printf '%s' "$2" > "$W/s1/reply"; else fat "$2" > "$W/s1/reply"; fi
+  printf '%s' "$2" > "$W/s1/reply"
   S1_DIR="$W/s1" python3 "$TMP/server.py" & SRV=$!
   for _ in $(seq 50); do [ -s "$W/s1/port" ] && break; sleep 0.1; done
   HOSTPORT="127.0.0.1:$(cat "$W/s1/port")"
@@ -278,7 +281,7 @@ test_ac2_intake_po_decision_applied() {
   has_label role:po && ! has_label needs-human && pass "ac2: intake 'po' decision from response applied" || fail "ac2: labels: $(jq -c '.[0].labels' "$W/issues.json")"
 }
 test_ac2_human_decision_applied() {
-  start_server ok '{"decision":"human","reason":"unclear"}'
+  start_server ok "$HUMAN_REPLY"
   run_s1 "$TMP/route.json" SYSTEM1_URL="http://$HOSTPORT"; stop_server
   has_label needs-human && pass "ac2: human decision -> needs-human" || fail "ac2: labels: $(jq -c '.[0].labels' "$W/issues.json")"
 }
@@ -398,12 +401,12 @@ test_ac5_url_setting_selects_endpoint() {
   local n2; n2=$(nreq); stop_server
   [ "$n2" -ge 1 ] && pass "ac5: system1-class.sh sent its request to the host:port in SYSTEM1_URL" || fail "ac5: class request did not reach SYSTEM1_URL"
 }
-test_ac5_hosted_url_with_v1_not_doubled() {
+test_ac5_url_ending_in_v1_systemone_used_as_is() {
   start_server ok "$ROUTE_REPLY"
-  run_s1 "$TMP/route.json" SYSTEM1_URL="http://$HOSTPORT/v1"
+  run_s1 "$TMP/route.json" SYSTEM1_URL="http://$HOSTPORT/v1/systemone"
   local p; p=$(req_path); stop_server
-  [[ "$p" == */systemone ]] && [[ "$p" != */v1/v1/* ]] && [[ "$p" != *chat/completions* ]] \
-    && pass "ac5: SYSTEM1_URL ending /v1 -> $p (no doubled /v1)" || fail "ac5: path '$p'"
+  [ "$p" = /v1/systemone ] \
+    && pass "ac5: SYSTEM1_URL ending /v1/systemone used as is -> $p" || fail "ac5: path '$p'"
 }
 test_ac5_api_key_sent() {
   start_server ok "$ROUTE_REPLY"
@@ -433,7 +436,7 @@ test_ac6_loop_disabled_makes_no_request() {
 # ---------- AC7 ----------
 test_ac7_docs_describe_llamacpp_systemone() {
   local ok=1 f
-  grep -qi 'systemone' docs/ARCHITECTURE.md && grep -qi 'llama\.cpp' docs/ARCHITECTURE.md && grep -q 'server-cuda' docs/ARCHITECTURE.md || { ok=0; echo "  ARCHITECTURE.md lacks llama.cpp / systemone / server-cuda"; }
+  grep -qi 'systemone' docs/ARCHITECTURE.md && grep -qi 'llama\.cpp' docs/ARCHITECTURE.md || { ok=0; echo "  ARCHITECTURE.md lacks llama.cpp / systemone"; }
   for f in README.md .env.example; do
     grep -qi 'llama\.cpp' "$f" && grep -q '/v1/systemone' "$f" || { ok=0; echo "  $f lacks llama.cpp or /v1/systemone"; }
   done
