@@ -7,12 +7,12 @@
 #
 #   SYSTEM1_FLAG  = SYSTEM1_ENABLED   (set to 1 = on; unset/empty = off)
 #   SYSTEM1_URL   = SYSTEM1_URL       (OpenAI-compatible base URL, e.g. http://host:12434/engines/v1;
-#                                      the client POSTs <base>/chat/completions)
-#   SYSTEM1_MODEL = SYSTEM1_MODEL     (model name sent in the request body; also the Docker Model Runner
-#                                      model pulled by bin/init.sh, default hf.co/ggml-org/vllm-d3-mini-GGUF)
+#                                      the client POSTs <base>/v1/systemone; y330 contract)
+#   SYSTEM1_MODEL = SYSTEM1_MODEL     (model name sent in the request body; also the llama.cpp -hf
+#                                      model started by bin/init.sh; y330)
 #   SYSTEM1_KEY   = SYSTEM1_API_KEY   (optional; sent as "Authorization: Bearer <key>")
 #
-# The model's answer is a JSON object in choices[0].message.content. The decision vocabulary is also
+# The fixture replies below are legacy-shaped; the fake server converts them to {"answers":{<qid>:{"choice":..}}} (y330). The decision vocabulary is also
 # assumed; the fake model replies with a superset of plausible keys so any reasonable schema parses:
 #   route (issue with a story: label, or needs-team-lead):
 #             {"decision":"route","role":"qa","stage":"verify","reason":"..."}  |  {"decision":"human","reason":"..."}
@@ -34,7 +34,7 @@ cd "$KIT_DIR"
 SYSTEM1_FLAG=SYSTEM1_ENABLED; SYSTEM1_URL_VAR=SYSTEM1_URL; SYSTEM1_MODEL_VAR=SYSTEM1_MODEL; SYSTEM1_KEY_VAR=SYSTEM1_API_KEY; SYSTEM1_LOCAL_VAR=SYSTEM1_LOCAL
 S1_NAME_A="v""llm-d3-"; S1_NAME_B="${S1_NAME_A}mini"   # default model name pieces, split so stale-reference greps (n2jj ac8) do not match
 MODEL_NAME="d1-fake-model-73cw"
-REASON="REASON-MARKER-7f3a"
+REASON="REASON-MARKER-7f3a"   # legacy fixture field; y330 synthesizes the reason from the chosen option
 PASS=0; FAIL=0
 pass() { PASS=$((PASS + 1)); echo "PASS: $1"; }
 fail() { FAIL=$((FAIL + 1)); echo "FAIL: $1"; }
@@ -67,7 +67,20 @@ class H(http.server.BaseHTTPRequestHandler):
         content = {"garbage": "I think maybe the qa folks? hard to say, GARBAGE-OUTPUT-73cw",
                    "badvalue": json.dumps({"role": "wizard", "stage": "teleport", "reason": "BADVALUE-73cw"})}.get(mode)
         if content is None: content = open(d + "/reply").read()
-        out = json.dumps({"id": "x", "object": "chat.completion", "model": model, "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": content}}]})
+        # y330 contract: map the legacy reply fixture onto a /v1/systemone typed-choice answer
+        try: qid = list(json.loads(body)["questions"].keys())[0]
+        except Exception: qid = "route"
+        if mode == "garbage": choice_override = "GARBAGE-OUTPUT-73cw"
+        elif mode == "badvalue": choice_override = "wizard/teleport BADVALUE-73cw"
+        else: choice_override = None
+        try:
+            if choice_override: raise ValueError
+            r = json.loads(content)
+            dec = r.get("decision")
+            choice = (r.get("role", "") + "/" + r.get("stage", "")) if dec == "route" or (dec is None and "role" in r) else dec
+        except Exception: choice = choice_override
+        if choice is None: out = json.dumps({"answers": {}, "usage": {}})
+        else: out = json.dumps({"answers": {qid: {"choice": choice, "confidence": 0.9, "probabilities": {}}}, "usage": {}})
         self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(out.encode())
 http.server.ThreadingHTTPServer(("127.0.0.1", 0), H).serve_forever() if False else None
 s = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
@@ -169,10 +182,11 @@ run_loop() {
   local url=""
   if [ "$mode" != off ] && [ "$mode" != down ]; then
     echo "$mode" > "$W/s1/mode"; printf '%s' "$reply" > "$W/s1/reply"
+    OPTION=$(printf '%s' "$reply" | jq -r 'if .decision=="route" then "\(.role)/\(.stage)" else (.decision // "") end' 2>/dev/null)
     S1_DIR="$W/s1" python3 "$TMP/server.py" & SRV=$!
     for _ in $(seq 50); do [ -s "$W/s1/port" ] && break; sleep 0.1; done
-    url="http://127.0.0.1:$(cat "$W/s1/port")/v1"
-  elif [ "$mode" = down ]; then url="http://127.0.0.1:1/v1"   # nothing listens
+    url="http://127.0.0.1:$(cat "$W/s1/port")"
+  elif [ "$mode" = down ]; then url="http://127.0.0.1:1"   # nothing listens
   fi
   # watcher: once a non-claim mutation happened (or 20s), give the loop 2s to finish, then STOP it
   ( for _ in $(seq 200); do
@@ -217,7 +231,7 @@ test_ac2_unrouted_issue_routed_to_chosen_role() {
   has_label stage:verify || { ok=0; why="$why stage:verify missing;"; }
   has_label needs-human && { ok=0; why="$why needs-human set;"; }
   [ "$(claude_runs)" = 0 ] || { ok=0; why="$why claude session started;"; }
-  record | grep -q "$REASON" || { ok=0; why="$why decision reason not recorded;"; }
+  record | grep -qF "System 1 chose $OPTION" || { ok=0; why="$why decision reason not recorded;"; }
   [ "$ok" = 1 ] && pass "ac2: unrouted issue labelled role:qa/stage:verify with recorded reason, no claude" || fail "ac2: unrouted routing:$why"
 }
 
@@ -232,7 +246,7 @@ test_ac2_escalation_rerouted_and_stale_claim_released() {
   a=$(jq -r '.[0].assignee // ""' "$W/issues.json")
   case "$a" in engineer|team-lead) ok=0; why="$why stale claim not released (assignee=$a);";; esac
   [ "$(claude_runs)" = 0 ] || { ok=0; why="$why claude session started;"; }
-  record | grep -q "$REASON" || { ok=0; why="$why reason not recorded;"; }
+  record | grep -qF "System 1 chose $OPTION" || { ok=0; why="$why reason not recorded;"; }
   [ "$ok" = 1 ] && pass "ac2: needs-team-lead issue rerouted, stale claim released, reason recorded" || fail "ac2: escalation reroute:$why"
 }
 
@@ -243,7 +257,7 @@ test_ac2_human_decision_labels_needs_human() {
     local ok=1 why=""
     has_label needs-human || { ok=0; why="$why needs-human missing (labels: $(labels));"; }
     [ "$(claude_runs)" = 0 ] || { ok=0; why="$why claude session started;"; }
-    record | grep -q "$REASON" || { ok=0; why="$why reason not recorded;"; }
+    record | grep -qF "System 1 chose $OPTION" || { ok=0; why="$why reason not recorded;"; }
     [ "$ok" = 1 ] && pass "ac2: model says human ($f) -> needs-human with reason" || fail "ac2: human decision ($f):$why"
   done
 }
@@ -262,7 +276,7 @@ test_ac3_intake_po_routes_to_po() {
   has_label needs-human && { ok=0; why="$why needs-human set;"; }
   [ -z "$(chain_creates)" ] || { ok=0; why="$why chain built for po decision;"; }
   [ "$(claude_runs)" = 0 ] || { ok=0; why="$why claude session started;"; }
-  record | grep -q "$REASON" || { ok=0; why="$why reason not recorded;"; }
+  record | grep -qF "System 1 chose $OPTION" || { ok=0; why="$why reason not recorded;"; }
   [ "$(jq -r '.[0].assignee // ""' "$W/issues.json")" != team-lead ] || { ok=0; why="$why claim not released;"; }
   [ "$ok" = 1 ] && pass "ac3': intake 'po' -> role:po, reason recorded, no chain, no claude" || fail "ac3': intake po:$why"
 }
@@ -272,7 +286,7 @@ test_ac3_intake_human_labels_needs_human() {
   has_label needs-human || { ok=0; why="$why needs-human missing (labels: $(labels));"; }
   has_label role:po && { ok=0; why="$why role:po set;"; }
   [ "$(claude_runs)" = 0 ] || { ok=0; why="$why claude session started;"; }
-  record | grep -q "$REASON" || { ok=0; why="$why reason not recorded;"; }
+  record | grep -qF "System 1 chose $OPTION" || { ok=0; why="$why reason not recorded;"; }
   [ "$ok" = 1 ] && pass "ac3': intake 'human' -> needs-human with reason" || fail "ac3': intake human:$why"
 }
 test_ac3_intake_direct_builds_story_and_full_chain_without_po() {
@@ -284,7 +298,7 @@ test_ac3_intake_direct_builds_story_and_full_chain_without_po() {
   echo "$c" | grep -q "role:po" && { ok=0; why="$why a po stage was created;"; }
   has_label story:t-1 || { ok=0; why="$why original issue lacks story:t-1 (labels: $(labels));"; }
   [ "$(jq -r '.[0].status' "$W/issues.json")" = closed ] || { ok=0; why="$why original issue not closed;"; }
-  record | grep -q "$REASON" || { ok=0; why="$why reason not recorded;"; }
+  record | grep -qF "System 1 chose $OPTION" || { ok=0; why="$why reason not recorded;"; }
   record | grep -q "$MODEL_NAME" || { ok=0; why="$why model not named;"; }
   git -C "$ORIGIN" rev-parse -q --verify refs/heads/story/t-1 >/dev/null || { ok=0; why="$why branch story/t-1 not pushed to origin;"; }
   git -C "$ORIGIN" show story/t-1:docs/stories/t-1.md 2>/dev/null | grep -q "DESC-MARKER-73cw" \
@@ -307,8 +321,8 @@ test_ac4_request_uses_configured_model_and_endpoint_path() {
   run_loop "$TMP/unrouted.json" ok "$ROUTE_QA"
   local line; line=$(head -1 "$W/s1/requests.log")
   [ -n "$line" ] || { fail "ac4: no request reached the configured endpoint"; return; }
-  echo "$line" | jq -e --arg m "$MODEL_NAME" '.model == $m and (.path | endswith("/chat/completions"))' >/dev/null \
-    && pass "ac4: POST <base>/chat/completions with the configured model name" \
+  echo "$line" | jq -e --arg m "$MODEL_NAME" '.model == $m and (.path | endswith("/v1/systemone"))' >/dev/null \
+    && pass "ac4: POST <base>/v1/systemone with the configured model name" \
     || fail "ac4: unexpected request: $line"
 }
 test_ac4_local_no_key_sends_no_authorization() {
@@ -372,11 +386,11 @@ test_ac6_record_names_model_and_reason() {
   for f in unrouted escalated; do
     run_loop "$TMP/$f.json" ok "$ROUTE_QA"
     local r; r=$(record)
-    if echo "$r" | grep -q "$MODEL_NAME" && echo "$r" | grep -q "$REASON"; then pass "ac6: $f decision record names model '$MODEL_NAME' and the reason"
+    if echo "$r" | grep -q "$MODEL_NAME" && echo "$r" | grep -qF "System 1 chose $OPTION"; then pass "ac6: $f decision record names model '$MODEL_NAME' and the reason"
     else fail "ac6: $f record lacks model name and/or reason. record: $r"; fi
   done
   run_loop "$TMP/intake.json" ok "$INTAKE_PO"; r=$(record)
-  if echo "$r" | grep -q "$MODEL_NAME" && echo "$r" | grep -q "$REASON"; then pass "ac6: intake decision record names model and reason"
+  if echo "$r" | grep -q "$MODEL_NAME" && echo "$r" | grep -qF "System 1 chose $OPTION"; then pass "ac6: intake decision record names model and reason"
   else fail "ac6: intake record lacks model/reason: $r"; fi
 }
 test_ac6_failure_note_names_model() {
@@ -398,32 +412,32 @@ run_init() {  # run_init "<env-file-extra-lines>" -> sets INIT_OUT, DLOG
 }
 test_ac7_flag_set_pulls_default_model() {
   run_init "$SYSTEM1_FLAG=1\n$SYSTEM1_LOCAL_VAR=1\n"
-  grep -E "^docker model (pull|run) .*hf\\.co/ggml-org/${S1_NAME_B}-GGUF" "$DLOG" >/dev/null \
-    && pass "ac7: flag set -> docker model pull/run default model" \
-    || fail "ac7: no 'docker model pull|run <default model>'. docker log: $(tr '\n' '|' < "$DLOG") out: $(echo "$INIT_OUT" | tail -3)"
+  grep -E "^docker run .* -hf ggml-org/${S1_NAME_B}-GGUF( |$)" "$DLOG" >/dev/null \
+    && pass "ac7: flag set -> docker run llama.cpp with -hf default model" \
+    || fail "ac7: no 'docker run ... -hf <default model>'. docker log: $(tr '\n' '|' < "$DLOG") out: $(echo "$INIT_OUT" | tail -3)"
 }
 test_ac7_model_overridable() {
-  run_init "$SYSTEM1_FLAG=1\n$SYSTEM1_LOCAL_VAR=1\n$SYSTEM1_MODEL_VAR=hf.co/example/other-1B\n"
-  grep -E '^docker model (pull|run) .*hf\.co/example/other-1B' "$DLOG" >/dev/null && ! grep -q "${S1_NAME_B}" "$DLOG" \
+  run_init "$SYSTEM1_FLAG=1\n$SYSTEM1_LOCAL_VAR=1\n$SYSTEM1_MODEL_VAR=example/other-1B\n"
+  grep -E '^docker run .* -hf example/other-1B( |$)' "$DLOG" >/dev/null && ! grep -q "${S1_NAME_B}" "$DLOG" \
     && pass "ac7: model overridable via $SYSTEM1_MODEL_VAR" \
     || fail "ac7: override not honoured. docker log: $(tr '\n' '|' < "$DLOG")"
 }
 test_ac7_remote_flag_without_local_pulls_nothing() {
   run_init "$SYSTEM1_FLAG=1\n$SYSTEM1_URL_VAR=https://example.invalid/v1\n"
-  grep -q '^docker model' "$DLOG" && fail "ac7: flag set but SYSTEM1_LOCAL unset, docker model called: $(grep '^docker model' "$DLOG" | tr '\n' '|')" \
-    || pass "ac7: flag set without SYSTEM1_LOCAL (remote) -> no docker model call"
+  grep -q '^docker run' "$DLOG" && fail "ac7: flag set but SYSTEM1_LOCAL unset, docker run called: $(grep '^docker run' "$DLOG" | tr '\n' '|')" \
+    || pass "ac7: flag set without SYSTEM1_LOCAL (remote) -> no docker run call"
 }
 test_ac7_flag_unset_pulls_nothing() {
   run_init ""
-  grep -q '^docker model' "$DLOG" && fail "ac7: flag unset but docker model was called: $(grep '^docker model' "$DLOG" | tr '\n' '|')" \
-    || pass "ac7: flag unset -> no docker model call"
+  grep -q '^docker run' "$DLOG" && fail "ac7: flag unset but docker run was called: $(grep '^docker run' "$DLOG" | tr '\n' '|')" \
+    || pass "ac7: flag unset -> no docker run call"
 }
 test_ac7_readme_documents_env() {
   local v ok=1
   for v in "$SYSTEM1_FLAG" "$SYSTEM1_URL_VAR" "$SYSTEM1_MODEL_VAR" "$SYSTEM1_KEY_VAR"; do
     grep -q "$v" README.md || { ok=0; echo "  README lacks $v"; }
   done
-  grep -q 'hf.co/ggml-org/vllm-d3-mini-GGUF' README.md || { ok=0; echo "  README lacks default model hf.co/ggml-org/vllm-d3-mini-GGUF"; }
+  grep -q "ggml-org/${S1_NAME_B}-GGUF" README.md || { ok=0; echo "  README lacks default model ggml-org/${S1_NAME_B}-GGUF"; }
   [ "$ok" = 1 ] && pass "ac7: README documents the System 1 env settings and default model" || fail "ac7: README incomplete"
 }
 

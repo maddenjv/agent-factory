@@ -3,7 +3,7 @@
 # Derived ONLY from docs/stories/agent-factory-hcql.md (test_acN_...). Assumed interfaces (the story
 # leaves them open; adjust the constants here, not the assertions, if the design differs):
 #   - env: MODEL_HIGH / MODEL_MEDIUM / MODEL_LOW, MODEL_<ROLE> pin, SYSTEM1_ENABLED/URL/MODEL
-#   - System 1 reply (choices[0].message.content) is a JSON object carrying the class under several
+#   - System 1 reply fixture (converted by the stub into a /v1/systemone answer) is a JSON object carrying the class under several
 #     plausible keys; a bare word is also tested (CLASS_JSON / the "plain" test).
 #   - The model reaches the harness as `--model <name>` on the stub `claude` command line.
 #   - The loop log is $DATA_DIR/logs/<role>/loop.log (also echoed to stdout).
@@ -37,7 +37,11 @@ class H(http.server.BaseHTTPRequestHandler):
         if mode == "http500":
             self.send_response(500); self.end_headers(); self.wfile.write(b"boom"); return
         content = open(d + "/reply").read()
-        out = json.dumps({"id": "x", "object": "chat.completion", "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": content}}]})
+        # y330 contract: serve a /v1/systemone typed-choice answer (id "class")
+        try: choice = json.loads(content)["class"]
+        except Exception: choice = content.strip() if content.strip() in ("high", "medium", "low") else "banana"
+        if "not-an-answer" in content or content.startswith("I would"): out = json.dumps({"answers": {}, "usage": {}})
+        else: out = json.dumps({"answers": {"class": {"choice": choice, "confidence": 0.9, "probabilities": {}}}, "usage": {}})
         self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(out.encode())
 s = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
 open(d + "/port", "w").write(str(s.server_address[1]))
