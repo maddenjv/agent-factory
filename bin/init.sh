@@ -71,17 +71,37 @@ else
   grep -q '^HARNESS=' "$AGENT_ENV_FILE" || echo "HARNESS=claude-code" >> "$AGENT_ENV_FILE"
 fi
 
-# System 1 (agent-factory-n2jj): with SYSTEM1_ENABLED=1 and SYSTEM1_LOCAL=1, pull the model via
-# Docker Model Runner (llama.cpp backend). Anything else touches no `docker model`.
+# System 1 (agent-factory-y330): with SYSTEM1_ENABLED=1 and SYSTEM1_LOCAL=1, start (or reuse) a llama.cpp
+# server container that serves the model for POST /v1/systemone. Anything else makes no docker call.
 s1_val() { grep -E "^$1=" "$AGENT_ENV_FILE" | tail -1 | cut -d= -f2- | sed -E 's/^["'"'"']|["'"'"']$//g'; }
 if [ "$(s1_val SYSTEM1_ENABLED)" = 1 ] && [ "$(s1_val SYSTEM1_LOCAL)" = 1 ]; then
-  s1_model="$(s1_val SYSTEM1_MODEL)"; s1_model="${s1_model:-hf.co/ggml-org/vllm-d3-mini-GGUF}"
-  if ! docker model version >/dev/null 2>&1; then
-    echo "error: SYSTEM1_LOCAL=1 needs Docker Model Runner ('docker model' is unavailable). Enable it in Docker Desktop (with TCP on port 12434), or install docker-model-plugin on Docker Engine, then re-run bin/init.sh." >&2
-    exit 1
+  S1_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda; S1_NAME=factory-s1-llama
+  s1_model="$(s1_val SYSTEM1_MODEL)"; s1_model="${s1_model:-ggml-org/vllm-d3-mini-GGUF}"
+  command -v docker >/dev/null 2>&1 || { echo "error: SYSTEM1_LOCAL=1 needs docker to run the llama.cpp server container ($S1_IMAGE), but 'docker' was not found." >&2; exit 1; }
+  s1_fail() { echo "error: llama.cpp System 1 container: $1 failed (needs an NVIDIA GPU + nvidia-container-toolkit for --gpus all)" >&2; exit 1; }
+  mkdir -p "$HOME/.cache/llama.cpp"
+  s1_state=$(docker inspect -f '{{.State.Running}}|{{join .Args " "}}' "$S1_NAME" 2>/dev/null) || s1_state=""
+  s1_start=run
+  if [ -n "$s1_state" ]; then
+    if [[ "$s1_state" == *"$s1_model"* ]]; then
+      if [ "${s1_state%%|*}" = true ]; then
+        echo "Reusing running System 1 container $S1_NAME ($s1_model)."; s1_start=none
+      else
+        s1_start=start
+      fi
+    else
+      docker rm -f "$S1_NAME" >/dev/null || s1_fail "docker rm -f $S1_NAME"
+    fi
   fi
-  echo "Pulling System 1 model $s1_model via Docker Model Runner..."
-  docker model pull "$s1_model" || { echo "error: Docker Model Runner: docker model pull $s1_model failed" >&2; exit 1; }
+  case "$s1_start" in
+    start) echo "Starting existing System 1 container $S1_NAME..."
+      docker start "$S1_NAME" >/dev/null || s1_fail "docker start $S1_NAME" ;;
+    run) echo "Starting System 1 llama.cpp container $S1_NAME ($s1_model); first start downloads the model."
+      docker run -d --name "$S1_NAME" --restart unless-stopped --gpus all -p 8080:8080 \
+        -v "$HOME/.cache/llama.cpp:/root/.cache/llama.cpp" "$S1_IMAGE" \
+        -hf "$s1_model" --host 0.0.0.0 --port 8080 >/dev/null || s1_fail "docker run $S1_IMAGE" ;;
+  esac
+  [ "$s1_start" = none ] || echo "Follow model download/startup with: docker logs -f $S1_NAME"
 fi
 
 # .agent-factory/ is excluded: this script creates it (untracked until init-project.sh

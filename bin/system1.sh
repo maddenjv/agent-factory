@@ -2,8 +2,8 @@
 # Usage: system1.sh <issue-id>
 # "System 1" team-lead (agent-factory-73cw): when SYSTEM1_ENABLED=1, bin/agent-loop.sh runs this
 # instead of a capable-model team-lead session for an issue-driven decision. A small model (served by
-# an OpenAI-compatible chat API: Docker Model Runner (llama.cpp) locally, or any hosted endpoint) is asked for ONE
-# JSON decision; this script validates it and applies it with bd/git. Any failure -> needs-human with
+# llama.cpp's POST /v1/systemone: a llama.cpp server container locally, or any hosted endpoint) is asked ONE
+# typed "choice" question; this script validates the option and applies it with bd/git. Any failure -> needs-human with
 # a note (never the capable-model session). See docs/design/agent-factory-73cw.md.
 set -uo pipefail
 # shellcheck disable=SC1091
@@ -11,13 +11,13 @@ source "$(dirname "${BASH_SOURCE[0]}")/bdjson.sh"
 
 KIT_DIR="${KIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 REPO="${REPO:-$PWD}"
-SYSTEM1_URL="${SYSTEM1_URL:-http://host.docker.internal:12434/engines/v1/systemone}"
-SYSTEM1_MODEL="${SYSTEM1_MODEL:-hf.co/ggml-org/vllm-d3-mini-GGUF}"
+SYSTEM1_URL="${SYSTEM1_URL:-http://host.docker.internal:8080}"
+SYSTEM1_MODEL="${SYSTEM1_MODEL:-ggml-org/vllm-d3-mini-GGUF}"
 SYSTEM1_API_KEY="${SYSTEM1_API_KEY:-}"
 SYSTEM1_TIMEOUT="${SYSTEM1_TIMEOUT:-60}"
 CAP=6000
 
-ID="" ; RAW="" ; ISSUE="" ; KIND=""
+ID="" ; RAW="" ; ISSUE="" ; KIND="" ; QID="" ; OPTION="" ; REASON=""
 PROV=""
 
 log() { echo "[system1 $(date +%T)] $*"; }
@@ -44,10 +44,26 @@ classify() {
   fi
 }
 
-system_prompt() {
+questions_json() {  # KIND -> the single typed choice question (instructions + criteria)
   case "$KIND" in
-    route) echo 'You are the routing step of a software-factory. Decide which role should handle the issue next. Roles and stages: po (no stage), architect/design, qa/tests, engineer/implement, qa/verify, reviewer/review, or rework by architect|engineer|qa|reviewer. If you cannot decide, choose human. Reply with exactly one JSON object and no prose: {"decision":"route","role":"<role>","stage":"<stage or empty for po>","reason":"<why>"} or {"decision":"human","reason":"<why>"}.' ;;
-    intake) echo 'You are the intake step of a software-factory. Decide how to handle a new unrouted issue. "po": it needs a product owner to write the story. "direct": it already has enough context (e.g. a bug with log snippets or a log path) to skip the product owner. "human": you cannot tell. Reply with exactly one JSON object and no prose: {"decision":"po"|"direct"|"human","reason":"<why>"}.' ;;
+    route) QID=route
+      jq -n '{route:{type:"choice",instructions:"You are the routing step of a software-factory. Decide which role should handle the issue next. If you cannot decide, choose human.",criteria:{
+        "po":"needs a product owner to write or fix the story",
+        "architect/design":"needs a design document",
+        "qa/tests":"needs acceptance tests written",
+        "engineer/implement":"needs implementation",
+        "qa/verify":"needs verification by QA",
+        "reviewer/review":"needs code review and merge",
+        "architect/rework":"design defect to rework by the architect",
+        "engineer/rework":"implementation defect to rework by the engineer",
+        "qa/rework":"test defect to rework by QA",
+        "reviewer/rework":"review-stage defect to rework by the reviewer",
+        "human":"cannot be decided automatically; needs a human"}}}' ;;
+    intake) QID=intake
+      jq -n '{intake:{type:"choice",instructions:"You are the intake step of a software-factory. Decide how to handle a new unrouted issue.",criteria:{
+        "po":"it needs a product owner to write the story",
+        "direct":"it already has enough context (e.g. a bug with log snippets or a log path) to skip the product owner",
+        "human":"you cannot tell"}}}' ;;
   esac
 }
 
@@ -64,31 +80,24 @@ user_prompt() {
   trunc "$out" $((CAP * 2))
 }
 
-ask_model() {  # sets RAW to the model\ reply reply text; fail on any transport problem
-  local body resp rc args content
-  body=$(jq -n --arg m "$SYSTEM1_MODEL" --arg s "$(system_prompt)" --arg u "$(user_prompt)" \
-    '{model:$m,messages:[{role:"system",content:$s},{role:"user",content:$u}],temperature:0,stream:false}')
+ask_model() {  # sets RAW to the response body and OPTION to answers.<QID>.choice; fail on any problem
+  local body resp rc args questions ep base
+  questions=$(questions_json)
+  body=$(jq -n --arg m "$SYSTEM1_MODEL" --arg st "$(user_prompt)" --argjson q "$questions" '{model:$m,state:$st,questions:$q}')
+  base="${SYSTEM1_URL%/}"
+  case "$base" in */systemone) ep="$base" ;; *) ep="$base/v1/systemone" ;; esac
   args=(-sS --connect-timeout 10 --max-time "$SYSTEM1_TIMEOUT" -H 'Content-Type: application/json')
   [ -n "$SYSTEM1_API_KEY" ] && args+=(-H "Authorization: Bearer $SYSTEM1_API_KEY")
-  resp=$(printf '%s' "$body" | curl "${args[@]}" -f -d @- "${SYSTEM1_URL%/}/chat/completions" 2>&1); rc=$?
+  resp=$(printf '%s' "$body" | curl "${args[@]}" -f -d @- "$ep" 2>&1); rc=$?
   RAW="$resp"
-  [ "$rc" = 0 ] || fail "request to ${SYSTEM1_URL%/}/chat/completions failed (curl exit $rc)"
-  content=$(printf '%s' "$resp" | jq -er '.choices[0].message.content' 2>/dev/null) || fail "response is not a chat completion with message content"
-  RAW="$content"
-  [ -n "${content//[[:space:]]/}" ] || fail "model returned empty content"
+  [ "$rc" = 0 ] || fail "request to $ep failed (curl exit $rc)"
+  OPTION=$(printf '%s' "$resp" | jq -er --arg q "$QID" '.answers[$q].choice | select(type=="string")' 2>/dev/null) \
+    || fail "response has no answers.$QID.choice"
+  REASON="System 1 chose $OPTION"
+  local conf; conf=$(printf '%s' "$resp" | jq -r --arg q "$QID" '.answers[$q].confidence // empty | tostring' 2>/dev/null)
+  [ -n "$conf" ] && REASON="$REASON (confidence $conf)"
+  return 0
 }
-
-extract_json() {  # RAW -> DECISION (first {...} object, fences tolerated)
-  local t
-  t=$(printf '%s\n' "${RAW//$'\r'/}" | grep -v '^[[:space:]]*```')
-  [[ "$t" == *"{"* && "$t" == *"}"* ]] || fail "model output contains no JSON object"
-  t="{${t#*\{}"; t="${t%\}*}}"
-  DECISION=$(printf '%s' "$t" | jq -ce 'select(type=="object")' 2>/dev/null) && [ -n "$DECISION" ] \
-    || fail "model output is not a valid JSON object"
-}
-
-jget() { printf '%s' "$DECISION" | jq -r "$1" 2>/dev/null; }
-reason_ok() { REASON=$(jget '.reason // empty | select(type=="string")'); [ -n "${REASON//[[:space:]]/}" ] || fail "decision has no reason"; }
 
 stage_ok() {  # role stage -> 0 if consistent
   case "$1/$2" in
@@ -113,15 +122,13 @@ apply_human() {
 }
 
 do_route() {
-  local d role stage
-  d=$(jget '.decision // empty')
-  reason_ok
-  case "$d" in
+  local role stage
+  case "$OPTION" in
     human) apply_human; return ;;
-    route) ;;
-    *) fail "invalid decision '$d' for a routing question" ;;
+    */*) role=${OPTION%%/*}; stage=${OPTION#*/} ;;
+    po) role=po; stage="" ;;
+    *) fail "invalid decision '$OPTION' for a routing question" ;;
   esac
-  role=$(jget '.role // empty'); stage=$(jget '.stage // empty')
   stage_ok "$role" "$stage" || fail "invalid role/stage pair '$role'/'$stage'"
   has_label needs-team-lead && bd label remove "$ID" needs-team-lead >/dev/null 2>&1
   route_label_reset
@@ -178,9 +185,7 @@ direct_build() {
 }
 
 do_intake() {
-  local d; d=$(jget '.decision // empty')
-  reason_ok
-  case "$d" in
+  case "$OPTION" in
     human) apply_human ;;
     po)
       bd label add "$ID" role:po >/dev/null 2>&1
@@ -188,7 +193,7 @@ do_intake() {
       bd unclaim "$ID" >/dev/null 2>&1
       log "$ID -> role:po" ;;
     direct) direct_build ;;
-    *) fail "invalid decision '$d' for an intake question" ;;
+    *) fail "invalid decision '$OPTION' for an intake question" ;;
   esac
 }
 
@@ -201,7 +206,6 @@ main() {
   PROV="System 1 ($SYSTEM1_MODEL @ $(printf '%s' "$SYSTEM1_URL" | sed -E 's#^[a-z]+://([^/]+).*#\1#'))"
   classify
   ask_model
-  extract_json
   case "$KIND" in
     route) do_route ;;
     intake) do_intake ;;
