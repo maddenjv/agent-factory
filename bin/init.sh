@@ -71,26 +71,17 @@ else
   grep -q '^HARNESS=' "$AGENT_ENV_FILE" || echo "HARNESS=claude-code" >> "$AGENT_ENV_FILE"
 fi
 
-# System 1 (agent-factory-lxo0): with SYSTEM1_ENABLED=1 and SYSTEM1_LOCAL=1, run the vLLM OpenAI server
-# image serving SYSTEM1_MODEL in container factory-system1 (host port 12434). Anything else starts nothing.
+# System 1 (agent-factory-n2jj): with SYSTEM1_ENABLED=1 and SYSTEM1_LOCAL=1, pull the model via
+# Docker Model Runner (llama.cpp backend). Anything else touches no `docker model`.
 s1_val() { grep -E "^$1=" "$AGENT_ENV_FILE" | tail -1 | cut -d= -f2- | sed -E 's/^["'"'"']|["'"'"']$//g'; }
 if [ "$(s1_val SYSTEM1_ENABLED)" = 1 ] && [ "$(s1_val SYSTEM1_LOCAL)" = 1 ]; then
-  S1_IMAGE=vllm/vllm-openai:latest; S1_NAME=factory-system1
-  s1_model="$(s1_val SYSTEM1_MODEL)"; s1_model="${s1_model:-LiquidAI/d1-2B}"
-  cur=$(docker inspect -f '{{.State.Running}} {{index .Config.Labels "agent-factory.system1.model"}}' "$S1_NAME" 2>/dev/null || true)
-  if [ "$cur" = "true $s1_model" ]; then
-    echo "System 1: $S1_NAME already serving $s1_model."
-  else
-    docker rm -f "$S1_NAME" >/dev/null 2>&1 || true   # stopped, or serving a different model
-    gpu=(); docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q nvidia && gpu=(--gpus all)
-    hf=(); [ -n "$(s1_val HF_TOKEN)" ] && hf=(-e "HF_TOKEN=$(s1_val HF_TOKEN)")
-    echo "Starting System 1 model $s1_model via $S1_IMAGE (first start downloads the model; see: docker logs -f $S1_NAME)..."
-    docker run -d --name "$S1_NAME" --restart unless-stopped ${gpu[@]+"${gpu[@]}"} --ipc=host \
-        -p 12434:8000 -v factory-system1-hf:/root/.cache/huggingface \
-        --label "agent-factory.system1.model=$s1_model" ${hf[@]+"${hf[@]}"} \
-        "$S1_IMAGE" --model "$s1_model" >/dev/null \
-      || { echo "error: failed to start vLLM container ($S1_IMAGE) for $s1_model: docker run failed" >&2; exit 1; }
+  s1_model="$(s1_val SYSTEM1_MODEL)"; s1_model="${s1_model:-hf.co/ggml-org/vllm-d3-mini-GGUF}"
+  if ! docker model version >/dev/null 2>&1; then
+    echo "error: SYSTEM1_LOCAL=1 needs Docker Model Runner ('docker model' is unavailable). Enable it in Docker Desktop (with TCP on port 12434), or install docker-model-plugin on Docker Engine, then re-run bin/init.sh." >&2
+    exit 1
   fi
+  echo "Pulling System 1 model $s1_model via Docker Model Runner..."
+  docker model pull "$s1_model" || { echo "error: Docker Model Runner: docker model pull $s1_model failed" >&2; exit 1; }
 fi
 
 # .agent-factory/ is excluded: this script creates it (untracked until init-project.sh

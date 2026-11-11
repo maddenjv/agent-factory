@@ -1,3 +1,5 @@
+> Superseded by agent-factory-n2jj (System 1 local backend reverted to Docker Model Runner).
+
 # Design: agent-factory-lxo0 - System 1 local model on vLLM in Docker
 
 Story: `docs/stories/agent-factory-lxo0.md`. Replaces Docker Model Runner (DMR) with the

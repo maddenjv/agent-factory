@@ -28,7 +28,7 @@ state is logged once and shown on the board. See `docs/design/agent-factory-hr7o
 Since `agent-factory-73cw`, an optional **System 1** mode (`SYSTEM1_ENABLED=1`) makes team-lead's
 issue-driven decisions (route an unrouted/`needs-team-lead` issue, or send a
 no-story issue to po vs straight to a script-generated story) with a small OpenAI-compatible chat model
-(vLLM in Docker locally via `bin/init.sh`, or a hosted endpoint) via `bin/system1.sh`, instead of a harness session;
+(Docker Model Runner (llama.cpp) locally, pulled by `bin/init.sh`, or a hosted endpoint) via `bin/system1.sh`, instead of a harness session;
 any failure labels the issue `needs-human`. See
 `docs/design/agent-factory-73cw.md`.
 
