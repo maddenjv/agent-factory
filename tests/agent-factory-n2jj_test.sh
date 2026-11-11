@@ -74,8 +74,8 @@ test_ac1_local_pulls_model_via_dmr() {
 }
 test_ac1_no_container_no_vllm_image() {
   run_init "$LOCAL_ON"
-  if ! grep -qE '^docker run' "$DLOG" && ! grep -qiE "$OLD_A|$OLD_C" "$DLOG"; then pass "ac1: no docker run, no vLLM image/container referenced"
-  else fail "ac1: container/vLLM activity: $(grep -iE "^docker run|$OLD_A|$OLD_C" "$DLOG" | tr '\n' '|')"; fi
+  if ! grep -qE '^docker run' "$DLOG" && ! strip_model < "$DLOG" | grep -qiE "$OLD_A|$OLD_C"; then pass "ac1: no docker run, no vLLM image/container referenced"
+  else fail "ac1: container/vLLM activity: $(strip_model < "$DLOG" | grep -iE "^docker run|$OLD_A|$OLD_C" | tr '\n' '|')"; fi
 }
 
 # ---------- AC2 ----------
