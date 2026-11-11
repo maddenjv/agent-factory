@@ -80,11 +80,13 @@ if [ "$(s1_val SYSTEM1_ENABLED)" = 1 ] && [ "$(s1_val SYSTEM1_LOCAL)" = 1 ]; the
   command -v docker >/dev/null 2>&1 || { echo "error: SYSTEM1_LOCAL=1 needs docker to run the llama.cpp server container ($S1_IMAGE), but 'docker' was not found." >&2; exit 1; }
   s1_fail() { echo "error: llama.cpp System 1 container: $1 failed (needs an NVIDIA GPU + nvidia-container-toolkit for --gpus all)" >&2; exit 1; }
   mkdir -p "$HOME/.cache/llama.cpp"
-  s1_state=$(docker inspect -f '{{.State.Running}}|{{join .Args " "}}' "$S1_NAME" 2>/dev/null) || s1_state=""
+  s1_state=$(docker inspect -f '{{.State.Running}}' "$S1_NAME" 2>/dev/null) || s1_state=""
+  s1_args=""; [ -z "$s1_state" ] || s1_args=$(docker inspect -f '{{join .Args " "}}' "$S1_NAME" 2>/dev/null) || s1_args=""
   s1_start=run
   if [ -n "$s1_state" ]; then
-    if [[ "$s1_state" == *"$s1_model"* ]]; then
-      if [ "${s1_state%%|*}" = true ]; then
+    # recreate only if the container's -hf model demonstrably differs
+    if [[ "$s1_args" != *-hf* || "$s1_args" == *"$s1_model"* ]]; then
+      if [ "$s1_state" = true ]; then
         echo "Reusing running System 1 container $S1_NAME ($s1_model)."; s1_start=none
       else
         s1_start=start
