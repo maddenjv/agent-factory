@@ -8,8 +8,8 @@
 #   SYSTEM1_FLAG  = SYSTEM1_ENABLED   (set to 1 = on; unset/empty = off)
 #   SYSTEM1_URL   = SYSTEM1_URL       (OpenAI-compatible base URL, e.g. http://host:12434/engines/v1;
 #                                      the client POSTs <base>/chat/completions)
-#   SYSTEM1_MODEL = SYSTEM1_MODEL     (model name sent in the request body; also the model served by the
-#                                      vLLM container bin/init.sh starts, default LiquidAI/d1-2B)
+#   SYSTEM1_MODEL = SYSTEM1_MODEL     (model name sent in the request body; also the Docker Model Runner
+#                                      model pulled by bin/init.sh, default hf.co/ggml-org/vllm-d3-mini-GGUF)
 #   SYSTEM1_KEY   = SYSTEM1_API_KEY   (optional; sent as "Authorization: Bearer <key>")
 #
 # The model's answer is a JSON object in choices[0].message.content. The decision vocabulary is also
@@ -397,32 +397,32 @@ run_init() {  # run_init "<env-file-extra-lines>" -> sets INIT_OUT, DLOG
 }
 test_ac7_flag_set_pulls_default_model() {
   run_init "$SYSTEM1_FLAG=1\n$SYSTEM1_LOCAL_VAR=1\n"
-  grep -E '^docker run .*vllm/vllm-openai:latest .*--model LiquidAI/d1-2B' "$DLOG" >/dev/null \
-    && pass "ac7: flag set -> docker run vllm/vllm-openai:latest --model LiquidAI/d1-2B" \
-    || fail "ac7: no 'docker run vllm/vllm-openai:latest --model LiquidAI/d1-2B'. docker log: $(tr '\n' '|' < "$DLOG") out: $(echo "$INIT_OUT" | tail -3)"
+  grep -E '^docker model (pull|run) .*hf\.co/ggml-org/vllm-d3-mini-GGUF' "$DLOG" >/dev/null \
+    && pass "ac7: flag set -> docker model pull/run hf.co/ggml-org/vllm-d3-mini-GGUF" \
+    || fail "ac7: no 'docker model pull|run hf.co/ggml-org/vllm-d3-mini-GGUF'. docker log: $(tr '\n' '|' < "$DLOG") out: $(echo "$INIT_OUT" | tail -3)"
 }
 test_ac7_model_overridable() {
-  run_init "$SYSTEM1_FLAG=1\n$SYSTEM1_LOCAL_VAR=1\n$SYSTEM1_MODEL_VAR=example/other-1B\n"
-  grep -E '^docker run .*vllm/vllm-openai:latest .*--model example/other-1B' "$DLOG" >/dev/null && ! grep -q 'LiquidAI/d1-2B' "$DLOG" \
+  run_init "$SYSTEM1_FLAG=1\n$SYSTEM1_LOCAL_VAR=1\n$SYSTEM1_MODEL_VAR=hf.co/example/other-1B\n"
+  grep -E '^docker model (pull|run) .*hf\.co/example/other-1B' "$DLOG" >/dev/null && ! grep -q 'vllm-d3-mini' "$DLOG" \
     && pass "ac7: model overridable via $SYSTEM1_MODEL_VAR" \
     || fail "ac7: override not honoured. docker log: $(tr '\n' '|' < "$DLOG")"
 }
 test_ac7_remote_flag_without_local_pulls_nothing() {
   run_init "$SYSTEM1_FLAG=1\n$SYSTEM1_URL_VAR=https://example.invalid/v1\n"
-  grep -q '^docker run' "$DLOG" && fail "ac7: flag set but SYSTEM1_LOCAL unset, docker run called: $(grep '^docker run' "$DLOG" | tr '\n' '|')" \
-    || pass "ac7: flag set without SYSTEM1_LOCAL (remote) -> no docker run call"
+  grep -q '^docker model' "$DLOG" && fail "ac7: flag set but SYSTEM1_LOCAL unset, docker model called: $(grep '^docker model' "$DLOG" | tr '\n' '|')" \
+    || pass "ac7: flag set without SYSTEM1_LOCAL (remote) -> no docker model call"
 }
 test_ac7_flag_unset_pulls_nothing() {
   run_init ""
-  grep -q '^docker run' "$DLOG" && fail "ac7: flag unset but docker run was called: $(grep '^docker run' "$DLOG" | tr '\n' '|')" \
-    || pass "ac7: flag unset -> no docker run call"
+  grep -q '^docker model' "$DLOG" && fail "ac7: flag unset but docker model was called: $(grep '^docker model' "$DLOG" | tr '\n' '|')" \
+    || pass "ac7: flag unset -> no docker model call"
 }
 test_ac7_readme_documents_env() {
   local v ok=1
   for v in "$SYSTEM1_FLAG" "$SYSTEM1_URL_VAR" "$SYSTEM1_MODEL_VAR" "$SYSTEM1_KEY_VAR"; do
     grep -q "$v" README.md || { ok=0; echo "  README lacks $v"; }
   done
-  grep -q 'LiquidAI/d1-2B' README.md || { ok=0; echo "  README lacks default model LiquidAI/d1-2B"; }
+  grep -q 'hf.co/ggml-org/vllm-d3-mini-GGUF' README.md || { ok=0; echo "  README lacks default model hf.co/ggml-org/vllm-d3-mini-GGUF"; }
   [ "$ok" = 1 ] && pass "ac7: README documents the System 1 env settings and default model" || fail "ac7: README incomplete"
 }
 
