@@ -63,7 +63,7 @@ run_loop() {
   echo '[{"id":"issue-1","status":"open","assignee":"","type":"task","labels":["role:'"$role"'","stage:verify","story:s"]}]' > "$W/issues.json"
   [ "$role" = team-lead ] && echo '[{"id":"issue-1","status":"open","assignee":"","type":"task","labels":["role:qa","stage:verify","story:s","needs-team-lead"]}]' > "$W/issues.json"
   RC=0
-  ( unset MODEL TIER_TEAM_LEAD TIER_STANDARD MODEL_PO MODEL_ARCHITECT MODEL_ENGINEER MODEL_QA MODEL_REVIEWER MODEL_TEAM_LEAD
+  ( unset MODEL MODEL_HIGH MODEL_MEDIUM MODEL_LOW TIER_TEAM_LEAD TIER_STANDARD MODEL_PO MODEL_ARCHITECT MODEL_ENGINEER MODEL_QA MODEL_REVIEWER MODEL_TEAM_LEAD
     export W HOME="$W/home" CONTAINER_HOME="$W/home"
     export PATH="$TMP/stubs:$PATH" ROLE="$role" HARNESS="$harness" KIT_DIR="$KIT_DIR" PROJECT_DIR="$W" \
       DATA_DIR="$W/data" ORIGIN="$ORIGIN" PREFLIGHT=0 MAX_ATTEMPTS_PER_ISSUE=1 MAX_CONSECUTIVE_FAILURES=1 \
@@ -210,7 +210,7 @@ test_ac5_copilot_preflight_quota_hit_waits_and_retries() {
   : > "$W/bdlog"; : > "$W/session_calls"; : > "$W/preflight_calls"; touch "$W/preflight_fail_once"
   echo '[{"id":"issue-1","status":"open","assignee":"","type":"task","labels":["role:qa","stage:verify","story:s"]}]' > "$W/issues.json"
   RC=0
-  ( unset MODEL TIER_TEAM_LEAD TIER_STANDARD MODEL_PO MODEL_ARCHITECT MODEL_ENGINEER MODEL_QA MODEL_REVIEWER MODEL_TEAM_LEAD
+  ( unset MODEL MODEL_HIGH MODEL_MEDIUM MODEL_LOW TIER_TEAM_LEAD TIER_STANDARD MODEL_PO MODEL_ARCHITECT MODEL_ENGINEER MODEL_QA MODEL_REVIEWER MODEL_TEAM_LEAD
     export W HOME="$W/home" CONTAINER_HOME="$W/home"
     export PATH="$TMP/stubs:$PATH" ROLE=qa HARNESS=copilot KIT_DIR="$KIT_DIR" PROJECT_DIR="$W" DATA_DIR="$W/data" \
       ORIGIN="$ORIGIN" PREFLIGHT=1 IDLE_SLEEP=1 QUOTA_RETRY_INTERVAL=1
