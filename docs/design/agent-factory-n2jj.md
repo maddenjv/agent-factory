@@ -50,8 +50,8 @@ restores the pre-`5f6a94d` Docker Model Runner (DMR) flow, with a new default mo
 5. `docs/ARCHITECTURE.md` line ~31: "(Docker Model Runner (llama.cpp) locally, pulled by `bin/init.sh`, or a hosted endpoint)".
 6. `docker-compose.yml` line 64 comment: "System 1 default URL (Docker Model Runner on the host, port 12434)".
 7. Docs history: leave `docs/design|stories/agent-factory-lxo0.md` and `-73cw.md` as historical records (AC8 does
-   not cover them). Add one line to the top of `docs/design/agent-factory-lxo0.md`: "Superseded by
-   agent-factory-n2jj (reverted to Docker Model Runner)." The engineer must not edit the 73cw design.
+   not cover them). The architect already added a "Superseded by n2jj" line atop `docs/design/agent-factory-lxo0.md`;
+   the engineer must not edit the 73cw design.
 
 ## Tests (QA)
 - Delete `tests/agent-factory-lxo0_test.sh` (it asserts vLLM behaviour) and replace with
