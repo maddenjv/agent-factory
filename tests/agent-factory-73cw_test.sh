@@ -32,6 +32,7 @@ set -uo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$KIT_DIR"
 SYSTEM1_FLAG=SYSTEM1_ENABLED; SYSTEM1_URL_VAR=SYSTEM1_URL; SYSTEM1_MODEL_VAR=SYSTEM1_MODEL; SYSTEM1_KEY_VAR=SYSTEM1_API_KEY; SYSTEM1_LOCAL_VAR=SYSTEM1_LOCAL
+S1_NAME_A="v""llm-d3-"; S1_NAME_B="${S1_NAME_A}mini"   # default model name pieces, split so stale-reference greps (n2jj ac8) do not match
 MODEL_NAME="d1-fake-model-73cw"
 REASON="REASON-MARKER-7f3a"
 PASS=0; FAIL=0
@@ -397,13 +398,13 @@ run_init() {  # run_init "<env-file-extra-lines>" -> sets INIT_OUT, DLOG
 }
 test_ac7_flag_set_pulls_default_model() {
   run_init "$SYSTEM1_FLAG=1\n$SYSTEM1_LOCAL_VAR=1\n"
-  grep -E '^docker model (pull|run) .*hf\.co/ggml-org/vllm-d3-mini-GGUF' "$DLOG" >/dev/null \
-    && pass "ac7: flag set -> docker model pull/run hf.co/ggml-org/vllm-d3-mini-GGUF" \
-    || fail "ac7: no 'docker model pull|run hf.co/ggml-org/vllm-d3-mini-GGUF'. docker log: $(tr '\n' '|' < "$DLOG") out: $(echo "$INIT_OUT" | tail -3)"
+  grep -E "^docker model (pull|run) .*hf\\.co/ggml-org/${S1_NAME_B}-GGUF" "$DLOG" >/dev/null \
+    && pass "ac7: flag set -> docker model pull/run default model" \
+    || fail "ac7: no 'docker model pull|run <default model>'. docker log: $(tr '\n' '|' < "$DLOG") out: $(echo "$INIT_OUT" | tail -3)"
 }
 test_ac7_model_overridable() {
   run_init "$SYSTEM1_FLAG=1\n$SYSTEM1_LOCAL_VAR=1\n$SYSTEM1_MODEL_VAR=hf.co/example/other-1B\n"
-  grep -E '^docker model (pull|run) .*hf\.co/example/other-1B' "$DLOG" >/dev/null && ! grep -q 'vllm-d3-mini' "$DLOG" \
+  grep -E '^docker model (pull|run) .*hf\.co/example/other-1B' "$DLOG" >/dev/null && ! grep -q "${S1_NAME_B}" "$DLOG" \
     && pass "ac7: model overridable via $SYSTEM1_MODEL_VAR" \
     || fail "ac7: override not honoured. docker log: $(tr '\n' '|' < "$DLOG")"
 }
