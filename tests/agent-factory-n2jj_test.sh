@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
-# Acceptance tests for agent-factory-n2jj: System 1's local model is hosted by Docker Model Runner
-# (llama.cpp backend, `docker model pull`), not vLLM. Derived ONLY from docs/stories/agent-factory-n2jj.md
-# (test_acN_...). Docker is a stub that logs every call and tracks pulled models in $DSTATE/models;
-# init.sh runs for real on a temp project.
+# Acceptance tests for agent-factory-n2jj: System 1's local model is hosted by llama.cpp, not vLLM.
+# Originally Docker Model Runner (`docker model pull`); updated by agent-factory-jgll to the y330
+# contract (llama.cpp server container `docker run ... -hf <model>`, POST <base>/v1/systemone).
+# Docker is a stub that logs every call and emulates one container in $DSTATE; init.sh runs for real
+# on a temp project. The "no vllm / d1-2B leftovers" check (AC8) is unchanged.
 #
 # Run directly: bash tests/agent-factory-n2jj_test.sh
 set -uo pipefail
 
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$KIT_DIR"
-DEFAULT_MODEL="hf.co/ggml-org/vllm-d3-mini-GGUF"
-DEFAULT_URL="http://host.docker.internal:12434/engines/v1/systemone"
+DEFAULT_MODEL="ggml-org/vllm-d3-mini-GGUF"
+DEFAULT_URL="http://host.docker.internal:8080"
 # Retired names, assembled from parts so this file does not itself contain them (AC8 scans tests).
 OLD_A="vl""lm"; OLD_B="Liquid""AI/d1-2B"; OLD_C="factory-""system1"
 PASS=0; FAIL=0
@@ -20,26 +21,21 @@ fail() { FAIL=$((FAIL + 1)); echo "FAIL: $1"; }
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/stubs"
 
-# DOCKER_FAIL_PULL=1 makes `docker model pull` fail (AC5); DOCKER_NO_DMR=1 makes every `docker model` fail.
+# DOCKER_FAIL_RUN=1 makes `docker run` fail (AC5). The stub emulates one container: `run` records its -hf
+# model in $DSTATE/c; `inspect` reports it as running with those args.
 cat > "$TMP/stubs/docker" <<'STUB'
 #!/usr/bin/env bash
 echo "docker $*" >> "${DOCKER_LOG:-/dev/null}"
-M="$DSTATE/models"; touch "$M"
 case "$1" in
-  model)
-    [ "${DOCKER_NO_DMR:-}" = 1 ] && { echo "docker: 'model' is not a docker command" >&2; exit 1; }
-    case "$2" in
-      pull)
-        [ "${DOCKER_FAIL_PULL:-}" = 1 ] && { echo "Error: failed to pull model: simulated failure" >&2; exit 1; }
-        grep -qxF "$3" "$M" || echo "$3" >> "$M"; echo "Model $3 pulled"; exit 0 ;;
-      list|ls) cat "$M"; exit 0 ;;
-      *) exit 0 ;;
-    esac ;;
+  run)
+    [ "${DOCKER_FAIL_RUN:-}" = 1 ] && { echo "Error: simulated docker run failure" >&2; exit 1; }
+    m=""; while [ $# -gt 0 ]; do [ "$1" = -hf ] && m=$2; shift; done; echo "$m" > "$DSTATE/c"; exit 0 ;;
+  inspect) [ -s "$DSTATE/c" ] && { echo "true|-hf $(cat "$DSTATE/c") --host 0.0.0.0 --port 8080"; exit 0; }
+    echo "Error: No such object" >&2; exit 1 ;;
+  rm) rm -f "$DSTATE/c"; exit 0 ;;
   compose)
     case " $* " in *" run "*) ( cd "$PROJECT_DIR" && { echo ".agent-factory/" >> .gitignore; git add .gitignore && git commit -q -m s; } );; esac
     exit 0 ;;
-  ps) exit 0 ;;
-  inspect) echo "Error: No such object" >&2; exit 1 ;;
   *) exit 0 ;;
 esac
 STUB
@@ -63,26 +59,26 @@ rerun_init() {
   INIT_RC=0
   INIT_OUT=$(cd "$PROJ" && DSTATE="$DSTATE" DOCKER_LOG="$DLOG" PATH="$TMP/stubs:$PATH" PROJECT_DIR="$PROJ" "$KIT/bin/init.sh" 2>&1) || INIT_RC=$?
 }
-pulls() { grep -E '^docker model pull ' "$DLOG"; }
+runs() { grep -E '^docker run ' "$DLOG"; }
 LOCAL_ON="SYSTEM1_ENABLED=1\nSYSTEM1_LOCAL=1\n"
 
 # ---------- AC1 ----------
-test_ac1_local_pulls_model_via_dmr() {
+test_ac1_local_starts_llamacpp_container() {
   run_init "$LOCAL_ON"
-  if [ "$INIT_RC" = 0 ] && [ -n "$(pulls)" ]; then pass "ac1: SYSTEM1_LOCAL=1 -> docker model pull ($(pulls | head -1))"
-  else fail "ac1: rc=$INIT_RC no docker model pull. log: $(tr '\n' '|' < "$DLOG") out: $(echo "$INIT_OUT" | tail -3)"; fi
+  if [ "$INIT_RC" = 0 ] && runs | grep -q 'llama\.cpp' && ! grep -qE '^docker model' "$DLOG"; then pass "ac1: SYSTEM1_LOCAL=1 -> docker run llama.cpp, no docker model call"
+  else fail "ac1: rc=$INIT_RC log: $(tr '\n' '|' < "$DLOG") out: $(echo "$INIT_OUT" | tail -3)"; fi
 }
-test_ac1_no_container_no_vllm_image() {
+test_ac1_no_vllm_image() {
   run_init "$LOCAL_ON"
-  if ! grep -qE '^docker run' "$DLOG" && ! strip_model < "$DLOG" | grep -qiE "$OLD_A|$OLD_C"; then pass "ac1: no docker run, no vLLM image/container referenced"
-  else fail "ac1: container/vLLM activity: $(strip_model < "$DLOG" | grep -iE "^docker run|$OLD_A|$OLD_C" | tr '\n' '|')"; fi
+  if ! strip_model < "$DLOG" | grep -qiE "$OLD_A|$OLD_C"; then pass "ac1: no vLLM image/container referenced"
+  else fail "ac1: vLLM activity: $(strip_model < "$DLOG" | grep -iE "$OLD_A|$OLD_C" | tr '\n' '|')"; fi
 }
 
 # ---------- AC2 ----------
-test_ac2_default_model_pulled() {
+test_ac2_default_model_used() {
   run_init "$LOCAL_ON"
-  if [ "$INIT_RC" = 0 ] && pulls | grep -qxF "docker model pull $DEFAULT_MODEL"; then pass "ac2: default model pulled is $DEFAULT_MODEL"
-  else fail "ac2: pulls: $(pulls | tr '\n' '|') rc=$INIT_RC"; fi
+  if [ "$INIT_RC" = 0 ] && runs | grep -qE -- " -hf $DEFAULT_MODEL( |\$)"; then pass "ac2: default model started is $DEFAULT_MODEL"
+  else fail "ac2: runs: $(runs | tr '\n' '|') rc=$INIT_RC"; fi
 }
 test_ac2_scripts_default_model() {
   local f ok=1
@@ -93,34 +89,28 @@ test_ac2_scripts_default_model() {
 }
 
 # ---------- AC3 ----------
-test_ac3_model_override_pulled() {
-  run_init "${LOCAL_ON}SYSTEM1_MODEL=hf.co/example/other-1B\n"
-  if pulls | grep -qxF "docker model pull hf.co/example/other-1B" && ! pulls | grep -qF "$DEFAULT_MODEL"; then pass "ac3: SYSTEM1_MODEL override pulled instead of default"
-  else fail "ac3: pulls: $(pulls | tr '\n' '|')"; fi
+test_ac3_model_override_used() {
+  run_init "${LOCAL_ON}SYSTEM1_MODEL=example/other-1B\n"
+  if runs | grep -qE -- " -hf example/other-1B( |\$)" && ! runs | grep -qF "$DEFAULT_MODEL"; then pass "ac3: SYSTEM1_MODEL override used instead of default"
+  else fail "ac3: runs: $(runs | tr '\n' '|')"; fi
 }
 
 # ---------- AC4 ----------
-test_ac4_rerun_succeeds_when_already_pulled() {
+test_ac4_rerun_succeeds_when_already_running() {
   run_init "$LOCAL_ON"; local rc1=$INIT_RC
+  : > "$DLOG"
   rerun_init
-  if [ "$rc1" = 0 ] && [ "$INIT_RC" = 0 ] && ! grep -qE '^docker run' "$DLOG"; then pass "ac4: second init.sh with model already pulled succeeds"
-  else fail "ac4: rc1=$rc1 rc2=$INIT_RC out: $(echo "$INIT_OUT" | tail -3)"; fi
+  if [ "$rc1" = 0 ] && [ "$INIT_RC" = 0 ] && [ -z "$(runs)" ]; then pass "ac4: second init.sh with the container already running succeeds, no new docker run"
+  else fail "ac4: rc1=$rc1 rc2=$INIT_RC runs: $(runs | tr '\n' '|') out: $(echo "$INIT_OUT" | tail -3)"; fi
 }
 
 # ---------- AC5 ----------
-test_ac5_pull_failure_exits_nonzero_naming_dmr() {
-  DOCKER_FAIL_PULL=1; export DOCKER_FAIL_PULL
+test_ac5_run_failure_exits_nonzero() {
+  DOCKER_FAIL_RUN=1; export DOCKER_FAIL_RUN
   run_init "$LOCAL_ON"
-  unset DOCKER_FAIL_PULL
-  if [ "$INIT_RC" != 0 ] && grep -qiE 'docker model runner' <<<"$INIT_OUT" && grep -qiE 'fail|error|cannot|could not|unavailable' <<<"$INIT_OUT"; then
-    pass "ac5: pull failure -> non-zero exit, message names Docker Model Runner and the failure"
-  else fail "ac5: rc=$INIT_RC out: $(echo "$INIT_OUT" | tail -4)"; fi
-}
-test_ac5_dmr_unavailable_exits_nonzero_naming_dmr() {
-  DOCKER_NO_DMR=1; export DOCKER_NO_DMR
-  run_init "$LOCAL_ON"
-  unset DOCKER_NO_DMR
-  if [ "$INIT_RC" != 0 ] && grep -qiE 'docker model runner' <<<"$INIT_OUT"; then pass "ac5: DMR unavailable -> non-zero exit naming Docker Model Runner"
+  unset DOCKER_FAIL_RUN
+  if [ "$INIT_RC" != 0 ] && grep -qiE 'llama\.cpp' <<<"$INIT_OUT" && grep -qiE 'fail|error|cannot|could not|unavailable' <<<"$INIT_OUT"; then
+    pass "ac5: docker run failure -> non-zero exit, message names llama.cpp and the failure"
   else fail "ac5: rc=$INIT_RC out: $(echo "$INIT_OUT" | tail -4)"; fi
 }
 
@@ -153,22 +143,20 @@ S
   cat > "$d/stubs/curl" <<'S'
 #!/usr/bin/env bash
 for a in "$@"; do last=$a; done; echo "$last" >> "$CURL_LOG"
-echo '{"choices":[{"message":{"content":"low"}}]}'
+echo '{"answers":{"class":{"choice":"low","confidence":0.9,"probabilities":{}}},"usage":{}}'
 S
   chmod +x "$d/stubs/"*; CURL_LOG="$d/curl.log"; : > "$CURL_LOG"
   ( unset SYSTEM1_URL SYSTEM1_MODEL; [ -z "${1:-}" ] || export "$1"; export CURL_LOG
     PATH="$d/stubs:$PATH" bash "$KIT_DIR/bin/system1-class.sh" t-1 >/dev/null 2>&1 )
   CALLED=$(tail -1 "$CURL_LOG")
 }
-test_ac7_request_targets_dmr_endpoint() {
+test_ac7_request_targets_systemone_endpoint() {
   run_class ""
-  if [[ "$CALLED" == "$DEFAULT_URL/chat/completions" || ( "$CALLED" == "$DEFAULT_URL"/* && "$CALLED" == */chat/completions ) ]]; then
-    pass "ac7: system1-class.sh unset URL -> $CALLED"
-  else fail "ac7: unset SYSTEM1_URL posted to '$CALLED'"; fi
+  [ "$CALLED" = "$DEFAULT_URL/v1/systemone" ] && pass "ac7: system1-class.sh unset URL -> $CALLED" || fail "ac7: unset SYSTEM1_URL posted to '$CALLED'"
 }
 test_ac7_url_override_still_wins() {
-  run_class "SYSTEM1_URL=http://example.invalid:9/v1"
-  [ "$CALLED" = "http://example.invalid:9/v1/chat/completions" ] && pass "ac7: SYSTEM1_URL override still used" || fail "ac7: override ignored, posted to '$CALLED'"
+  run_class "SYSTEM1_URL=http://example.invalid:9"
+  [ "$CALLED" = "http://example.invalid:9/v1/systemone" ] && pass "ac7: SYSTEM1_URL override still used" || fail "ac7: override ignored, posted to '$CALLED'"
 }
 
 # ---------- AC8 ----------
@@ -181,13 +169,13 @@ test_ac8_no_stale_vllm_references() {
   [ -z "$hits" ] && pass "ac8: no vLLM / vllm-openai / factory-system1 / d1-2B references in docs, bin, compose or System 1 tests" || fail "ac8: stale references:
 $(echo "$hits" | head -10)"
 }
-test_ac8_docs_describe_dmr_llamacpp() {
+test_ac8_docs_describe_llamacpp() {
   local ok=1 f
   for f in README.md .env.example; do
-    grep -qi 'model runner' "$f" && grep -qi 'llama\.cpp' "$f" && grep -q 'SYSTEM1_LOCAL' "$f" && grep -qF "$DEFAULT_MODEL" "$f" \
-      || { ok=0; echo "  $f lacks Docker Model Runner / llama.cpp / SYSTEM1_LOCAL / $DEFAULT_MODEL"; }
+    grep -qi 'llama\.cpp' "$f" && grep -q 'SYSTEM1_LOCAL' "$f" && grep -qF "$DEFAULT_MODEL" "$f" \
+      || { ok=0; echo "  $f lacks llama.cpp / SYSTEM1_LOCAL / $DEFAULT_MODEL"; }
   done
-  [ "$ok" = 1 ] && pass "ac8: README and .env.example describe local DMR (llama.cpp) hosting" || fail "ac8: docs incomplete"
+  [ "$ok" = 1 ] && pass "ac8: README and .env.example describe local llama.cpp hosting" || fail "ac8: docs incomplete"
 }
 
 for t in $(declare -F | awk '{print $3}' | grep '^test_'); do "$t"; done

@@ -27,8 +27,9 @@ state is logged once and shown on the board. See `docs/design/agent-factory-hr7o
 
 Since `agent-factory-73cw`, an optional **System 1** mode (`SYSTEM1_ENABLED=1`) makes team-lead's
 issue-driven decisions (route an unrouted/`needs-team-lead` issue, or send a
-no-story issue to po vs straight to a script-generated story) with a small OpenAI-compatible chat model
-(Docker Model Runner (llama.cpp) locally, pulled by `bin/init.sh`, or a hosted endpoint) via `bin/system1.sh`, instead of a harness session;
+no-story issue to po vs straight to a script-generated story) with a small decision model served by a
+llama.cpp server container (`ghcr.io/ggml-org/llama.cpp:server-cuda`) (started by `bin/init.sh`) or a hosted endpoint, asked one typed `choice` question via
+`POST /v1/systemone` (`agent-factory-y330`), via `bin/system1.sh`, instead of a harness session;
 any failure labels the issue `needs-human`. See
 `docs/design/agent-factory-73cw.md`.
 
@@ -36,7 +37,7 @@ Since `agent-factory-hcql`, System 1 also makes a second kind of decision for ev
 `bin/agent-loop.sh`'s `choose_model` asks `bin/system1-class.sh` to classify the claimed issue as
 `high|medium|low` and runs the session with `MODEL_HIGH|MODEL_MEDIUM|MODEL_LOW`. Failure or System 1
 being off falls back to `MODEL_MEDIUM`; an empty class model falls back to the role default; an explicit
-`MODEL_<ROLE>` wins and skips the request. The classifier never labels issues. See
+`MODEL_<ROLE>` wins and skips the request. The classifier never labels issues and uses the same `/v1/systemone` endpoint. See
 `docs/design/agent-factory-hcql.md`.
 
 ## Stack
