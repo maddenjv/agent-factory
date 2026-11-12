@@ -366,18 +366,21 @@ test_ac5_timeout() { run_loop "$TMP/unrouted.json" hang "" SYSTEM1_TIMEOUT=2 SYS
 test_ac5_garbage_output() { run_loop "$TMP/unrouted.json" garbage ""; check_failure "non-JSON output" GARBAGE-OUTPUT-73cw; }
 test_ac5_invalid_decision_value() { run_loop "$TMP/escalated.json" badvalue ""; check_failure "unknown role/stage" BADVALUE-73cw; }
 test_ac5_flag_set_without_endpoint() {
-  # flag on but URL/model not configured: must fail to needs-human, not silently fall back to claude
+  # flag on, URL/model unset: system1.sh now defaults them (host.docker.internal), so the default endpoint is
+  # unreachable here (stub curl fails fast, hermetic): must fail to needs-human, not silently fall back to claude
+  mkdir -p "$TMP/stubs_down"; printf '#!/bin/sh\necho "curl: (7) stub: default endpoint unreachable" >&2\nexit 7\n' > "$TMP/stubs_down/curl"
+  chmod +x "$TMP/stubs_down/curl"
   W="$(mktemp -d "$TMP/run.XXXXXX")"; mkdir -p "$W/data/control" "$W/home"; : > "$W/bdlog"; : > "$W/claude_runs"
   cp "$TMP/unrouted.json" "$W/issues.json"
   ( for _ in $(seq 200); do grep -E '^bd (update|label|comment)' "$W/bdlog" | grep -qv -- '--claim' && break; [ -s "$W/claude_runs" ] && break; sleep 0.1; done
     sleep 2; touch "$W/data/control/STOP" ) & local wt=$!
   ( export W HOME="$W/home" CONTAINER_HOME="$W/home" "$SYSTEM1_FLAG=1"
     unset "$SYSTEM1_URL_VAR" "$SYSTEM1_MODEL_VAR" "$SYSTEM1_KEY_VAR"
-    PATH="$TMP/stubs:$PATH" ROLE=team-lead KIT_DIR="$KIT_DIR" PROJECT_DIR="$W" DATA_DIR="$W/data" ORIGIN="$ORIGIN" \
+    PATH="$TMP/stubs_down:$TMP/stubs:$PATH" ROLE=team-lead KIT_DIR="$KIT_DIR" PROJECT_DIR="$W" DATA_DIR="$W/data" ORIGIN="$ORIGIN" \
       PREFLIGHT=0 IDLE_SLEEP=1 MAX_ATTEMPTS_PER_ISSUE=1 MAX_CONSECUTIVE_FAILURES=1 \
       timeout 40 bash "$KIT_DIR/bin/agent-loop.sh" >"$W/out" 2>&1 ) || true
   kill "$wt" 2>/dev/null; wait "$wt" 2>/dev/null
-  check_failure "flag set but endpoint/model unconfigured"
+  check_failure "flag set, endpoint/model defaulted but unreachable"
 }
 
 # ---------- AC6: bd show says which model decided and why ----------
