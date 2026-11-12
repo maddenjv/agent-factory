@@ -97,8 +97,8 @@ etc.) don't leak into each other.
 **Model tiers**: each role's model comes from a two-tier default - `team-lead` (coordination/
 triage) runs on the most capable tier (currently Opus); the five execution roles (`po`,
 `architect`, `engineer`, `qa`, `reviewer`) run on a lower-capability tier (currently Sonnet). Set
-`MODEL_<ROLE>` in `.env` (e.g. `MODEL_QA=opus`) to override a single role's tier default; leave it
-empty to keep the tier default. Every startup logs the model actually resolved for that run
+`MODEL_<ROLE>` in `.env` (e.g. `MODEL_QA=opus`) to override a single role's tier default (applies only
+when System 1 gives no usable model, see "Per-task model class"); leave it empty to keep the tier default. Every startup logs the model actually resolved for that run
 (`role=... model=...`), tier default or override alike.
 
 ```bash
@@ -135,7 +135,7 @@ a new `CLAUDE.md` or an appended section on your existing one) straight to your 
 - `HUMAN_APPROVE_STORIES` (1) - new stories wait for `approve.sh`
 - `NOTIFY_URL` - push alerts; `ALERT_MAX_AGE_MINUTES` (60) - alert age limit
 - `DOLT_HOST_PORT` - host port for the Dolt server
-- `MODEL_TEAM_LEAD` and `MODEL_<ROLE>` - per-role model overrides
+- `MODEL_TEAM_LEAD` and `MODEL_<ROLE>` - per-role model overrides (used when System 1 gives no usable model)
 
 ### Customising the agent image
 Optionally, put private CA certificates in `extra-ca/*.crt` and dotfiles in `dotfiles/` (optional; copied into
@@ -168,10 +168,11 @@ decision is recorded with `bd comment` naming the model, endpoint host and reaso
 
 **Per-task model class.** With the three class models set, each session in any role first asks System 1
 (`bin/system1-class.sh`) whether the issue needs a `high`, `medium` or `low` class model and runs with
-the matching `MODEL_<CLASS>`. If System 1 is off, unreachable or answers something invalid, the session
-uses `MODEL_MEDIUM` (the loop log records the fallback and reason); if the chosen class variable is empty
-the role's default model is used. An explicit `MODEL_<ROLE>` wins and skips System 1. Each choice is logged
-as `model: <issue> class=... source=... model=...`.
+the matching `MODEL_<CLASS>`. Order, highest priority first: (1) System 1's class model, when System 1
+is enabled, answers a valid class and that `MODEL_<CLASS>` is set; (2) `MODEL_<ROLE>`; (3) `MODEL_MEDIUM`;
+(4) the role's tier default. A role pin therefore applies only when System 1 is off, fails, times out,
+answers an invalid class, or the chosen class variable is empty. Each choice is logged as
+`model: <issue> source=... model=... fallback=(reason)`.
 
 **Local:** needs Docker and an NVIDIA GPU with nvidia-container-toolkit. Set `SYSTEM1_ENABLED=1` and
 `SYSTEM1_LOCAL=1` and run `bin/init.sh`: it starts (or reuses) the `factory-s1-llama` container

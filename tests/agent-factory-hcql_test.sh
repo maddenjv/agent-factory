@@ -200,14 +200,15 @@ test_ac3_fallback_reason_logged() {
 
 # ---------- AC4 ----------
 test_ac4_chosen_class_var_empty_uses_role_default() {
-  run_loop engineer "$TMP/eng.json" ok "$(cls high)" MODEL_MEDIUM=$MED MODEL_LOW=$LO
+  # is2h: empty class var falls to MODEL_<ROLE>, then MODEL_MEDIUM, then role default; here only LOW is set
+  run_loop engineer "$TMP/eng.json" ok "$(cls high)" MODEL_LOW=$LO
   local m; m=$(model_used)
-  [ "$m" != "$MED" ] && [ "$m" != "$LO" ] && [ "$(requests)" -ge 1 ] \
+  [ "$m" != "$LO" ] && [ "$(requests)" -ge 1 ] \
     && loglines | grep -qiE 'default' \
     && pass "ac4: MODEL_HIGH empty -> role default ('${m:-<none>}'), log says so" || fail "ac4: got '$m'; log: $(loglines | grep -i model | tail -3)"
 }
 test_ac4_role_default_is_existing_tier() {
-  run_loop engineer "$TMP/eng.json" ok "$(cls high)" MODEL_MEDIUM=$MED
+  run_loop engineer "$TMP/eng.json" ok "$(cls high)" MODEL_LOW=$LO
   [ "$(model_used)" = sonnet ] && pass "ac4: empty class var -> existing engineer default (sonnet)" || fail "ac4: got '$(model_used)' want sonnet"
 }
 test_ac4_medium_empty_on_fallback_path() {
@@ -218,9 +219,10 @@ test_ac4_medium_empty_on_fallback_path() {
 
 # ---------- AC5 ----------
 test_ac5_role_pin_wins_without_consulting_system1() {
+  # is2h: System 1 class model now beats MODEL_<ROLE>; the pin applies only when System 1 gives no model
   run_loop engineer "$TMP/eng.json" ok "$(cls high)" $CLASSES MODEL_ENGINEER=$PIN
-  [ "$(model_used)" = "$PIN" ] && [ "$(requests)" = 0 ] \
-    && pass "ac5: MODEL_ENGINEER pin wins, System 1 not consulted" || fail "ac5: got '$(model_used)' requests=$(requests)"
+  [ "$(model_used)" = "$HI" ] && [ "$(requests)" = 1 ] \
+    && pass "ac5: System 1 class model beats MODEL_ENGINEER pin" || fail "ac5: got '$(model_used)' requests=$(requests)"
 }
 
 # ---------- AC6 ----------
