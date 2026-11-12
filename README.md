@@ -5,14 +5,15 @@ unsticks their work, each its own Docker container, coordinated
 through Beads and git, running on Claude Code (default) or GitHub Copilot CLI — chosen once at
 setup time with `bin/init.sh --harness=<claude-code|copilot>` (see "Setup" below). Agents run with
 full tool permissions inside their container (`--dangerously-skip-permissions` for Claude Code,
-`--allow-all-tools --no-ask-user` for GitHub Copilot CLI). The status board and all the agents show
-as panes in one tmux window; `ops` — the shell you type into — is a separate window.
+`--allow-all-tools --no-ask-user` for GitHub Copilot CLI). The six agents (team-lead included) show
+as panes in the tmux window `agents`; the `ops` window holds the shell you type into, with the status
+board pane above it.
 
 ```
                        shared Dolt server (container "dolt")  <- the only Beads database
                                    ^   ^   ^   ^   ^
-   tmux "agents" window, one pane each:   board | po | architect | qa | engineer | reviewer
-   (+ separate "ops" window)
+   tmux "agents" window, one pane each:   team-lead | po | architect | qa | engineer | reviewer
+   (+ separate "ops" window: board pane above the shell pane you type into)
    container: each has its own git clone of YOUR PROJECT (see Setup) - only the reviewer pushes
    back to it directly; stories, designs and the beads database all live inside it, under
    <project>/.agent-factory/
@@ -38,7 +39,7 @@ flowchart LR
     reviewer -- "implementation defect" --> engineer
     reviewer -- "test defect" --> qa
 ```
-3. With `HUMAN_APPROVE_STORIES=1` the design issue starts labelled `needs-human`: read the story, then `approve.sh <design-issue>`.
+3. With `HUMAN_APPROVE_STORIES=1` the design issue starts labelled `needs-human`: read the story, then `approve.sh <design-issue>` (the design (architect) issue).
 4. Each agent polls `bd ready --label role:<me>`, claims one issue, runs one fresh Claude session on it, and
    closes it, which unblocks the next stage. Design (architect, then engineer) and write-tests (qa) run in parallel
    on their own branches (`story/<id>-design`, `story/<id>-tests`); each is merged into the shared `story/<id>`
@@ -48,6 +49,12 @@ flowchart LR
    only), architect (design; this re-triggers an engineer re-implementation), or qa (tests; engineer only if the
    corrected tests then fail). Other roles' work is left untouched. The blocked QA/review issue re-opens when they
    close. After 2 rework rounds a story goes to `needs-human`.
+6. Before the reviewer claims a `stage:review` issue, `bin/conflict-check.sh` checks the branch for merge
+   conflicts against `main` and files a `merge-conflict` rework issue if there are any. If an engineer can't
+   resolve it, `bin/restart-story.sh` (invoked by agents, not normally by you) redoes implement/verify/review
+   from current `main`; design and tests are kept.
+7. Small, self-contained follow-ups skip the story chain: an agent works on a `fix/<issue-id>` branch and the
+   reviewer reviews and merges it without design or tests.
 
 ## Setup
 **Prerequisite:** Docker with the Compose plugin (`docker compose`; the legacy standalone
@@ -97,7 +104,7 @@ empty to keep the tier default. Every startup logs the model actually resolved f
 ```bash
 cd ~/path/to/your/project    # NOT this kit's directory - this is the repo agents will work on
 /path/to/agent-factory/bin/init.sh [--harness=claude-code|copilot]    # first run creates <project>/.agent-factory/.env; defaults need no auth (reuses host ~/.claude); run again
-/path/to/agent-factory/bin/start.sh   # tmux session "factory": window "agents" (panes: board po architect qa engineer reviewer), window "ops"
+/path/to/agent-factory/bin/start.sh   # tmux session "factory": window "agents" (panes: team-lead po architect qa engineer reviewer), window "ops" (shell + board panes)
 tmux attach -t factory
 ```
 
@@ -114,6 +121,31 @@ feature - it refuses loudly, not silently, if your project has uncommitted chang
 moment). It commits initial scaffolding (`docs/stories/`, `docs/design/`, beads init, and either
 a new `CLAUDE.md` or an appended section on your existing one) straight to your project's `main`
 — it refuses to run at all if your project isn't already clean on `main` first.
+
+### Configuration
+`.env.example` is the full, commented list of settings. The loop knobs (defaults from `.env.example`):
+- `MAX_TURNS` (60) - tool-use turns per session
+- `ITERATION_TIMEOUT` (45m) - wall-clock cap per session
+- `IDLE_SLEEP` (60) - seconds between polls when the queue is empty
+- `MAX_ATTEMPTS_PER_ISSUE` (2) - then the issue goes to `needs-human`
+- `MAX_CONSECUTIVE_FAILURES` (3) - circuit breaker
+- `QUOTA_RETRY_INTERVAL` (900) - seconds between retries after a usage limit
+- `DAILY_BUDGET_USD` - daily spend cap
+- `MAX_READY_ENGINEER_ISSUES` (5) - PO gate
+- `HUMAN_APPROVE_STORIES` (1) - new stories wait for `approve.sh`
+- `NOTIFY_URL` - push alerts; `ALERT_MAX_AGE_MINUTES` (60) - alert age limit
+- `DOLT_HOST_PORT` - host port for the Dolt server
+- `MODEL_TEAM_LEAD` and `MODEL_<ROLE>` - per-role model overrides
+
+### Customising the agent image
+Optionally, put private CA certificates in `extra-ca/*.crt` and dotfiles in `dotfiles/` (optional; copied into
+the container user's home). Both are git-ignored (keep the `.gitkeep`); they take effect after
+`docker compose build agent` and a restart. See `docs/ARCHITECTURE.md` "Stack". If
+`<project>/.venv` exists it is recreated as a container-local venv (`bin/project-venv.sh`); otherwise
+that step is a no-op.
+
+## Before running unattended
+Run `bin/smoke-test.sh` from the **ops** shell first; it checks concurrent Beads writes under Dolt server mode.
 
 ## System 1 team-lead (optional)
 
@@ -154,11 +186,11 @@ confidence rather than prose.
 ## Day to day
 | Want to | Do |
 |---|---|
-| See state | `board` pane in the `agents` window; `bd ready`, `bd blocked`, `bd dep tree <id>` in the `ops` window, or `bd` directly from your own host shell in the project directory — no container needed (see Security notes) |
+| See state | `board` pane in the `ops` window; `bd ready`, `bd blocked`, `bd dep tree <id>` in the `ops` window, or `bd` directly from your own host shell in the project directory — no container needed (see Security notes) |
 | Watch an agent | its pane in the `agents` window (rendered tool calls/text; Ctrl-b o to cycle, Ctrl-b q to jump by number); raw stream in `<project>/.agent-factory/logs/<role>/*.jsonl` (Claude Code) or `*.log` (Copilot CLI, plain text) |
 | Review-by-exception | `needs-human` list on the board; `bd show <id>` — the agent (or agent-loop.sh itself, on an attempt-cap/failure escalation) leaves a note on the issue explaining exactly what it needs; set `NOTIFY_URL` for push alerts |
 | Unstick an issue | answer what the issue's note asked for, then `approve.sh <id> -m "<answer>"` (or plain `approve.sh <id>`) |
-| Ask team-lead to triage a stuck issue | `bd label add <id> needs-team-lead` - it has its own pane in the `agents` window and picks the issue up on its next poll. It also picks up issues with no `role:*` label, on its own, no hand-labelling needed; |
+| Ask team-lead to triage a stuck issue | `bd label add <id> needs-team-lead` - it has its own pane (`team-lead`) in the `agents` window and picks the issue up on its next poll. It also picks up issues with no `role:*` label, on its own, no hand-labelling needed; |
 | Pause / resume | `bin/stop.sh` (graceful) / `bin/stop.sh clear` then `bin/start.sh` — run from the same project directory |
 | Hard stop | `bin/stop.sh now` |
 | Restart one agent | `tmux list-panes -t factory:agents` for its index, then `tmux respawn-pane -k -t factory:agents.<index>` |
