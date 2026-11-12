@@ -9,6 +9,9 @@
 # Run directly: bash tests/agent-factory-250_test.sh
 set -uo pipefail
 
+# Hermetic: operator System 1 settings must not leak in and change the team-lead startup-log model (agent-factory-49xn)
+unset SYSTEM1_ENABLED SYSTEM1_LOCAL SYSTEM1_URL SYSTEM1_MODEL SYSTEM1_API_KEY SYSTEM1_TIMEOUT
+
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PASS=0; FAIL=0
 pass() { PASS=$((PASS + 1)); echo "PASS: $1"; }
