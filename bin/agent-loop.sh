@@ -56,10 +56,9 @@ fi
 model_key="${ROLE^^}"; model_key="${model_key//-/_}"
 model_var="MODEL_${model_key}"
 MODEL="${!model_var:-}"
-MODEL_PINNED=0; [ -n "$MODEL" ] && MODEL_PINNED=1   # explicit MODEL_<ROLE>: wins, System 1 not consulted
-if [ -z "$MODEL" ]; then
-  if [ "$ROLE" = "team-lead" ]; then MODEL="$TIER_TEAM_LEAD"; else MODEL="$TIER_STANDARD"; fi
-fi
+MODEL_PINNED=0; [ -n "$MODEL" ] && MODEL_PINNED=1   # MODEL_<ROLE> is set: used at priority 2 (after System 1's class model)
+if [ "$ROLE" = "team-lead" ]; then ROLE_DEFAULT_MODEL="$TIER_TEAM_LEAD"; else ROLE_DEFAULT_MODEL="$TIER_STANDARD"; fi
+[ -n "$MODEL" ] || MODEL="$ROLE_DEFAULT_MODEL"
 
 mkdir -p "$LOGDIR" "$STATE" "$CONTROL/cost"
 # shellcheck disable=SC1091
@@ -374,30 +373,33 @@ run_harness_session() {  # run_harness_session LOGNAME PROMPT -> sets LAST_RUN_Q
   rm -f "$errfile" "$outfile"
 }
 
-choose_model() {  # choose_model ID -> sets SESSION_MODEL, logs one line (agent-factory-hcql)
-  local id=$1 class="" src="" m errtmp reason ckey
-  if [ "$MODEL_PINNED" = 1 ]; then
-    SESSION_MODEL=$MODEL; log "model: $id class=- source=pinned($model_var) model=$MODEL"; return 0
-  fi
-  if [ -z "${MODEL_HIGH:-}${MODEL_MEDIUM:-}${MODEL_LOW:-}" ]; then
-    SESSION_MODEL=$MODEL; log "model: $id class=- source=default (no class models set) model=${MODEL:-<harness default>}"; return 0
-  fi
-  if [ "${SYSTEM1_ENABLED:-}" = 1 ]; then
+choose_model() {  # choose_model ID -> sets SESSION_MODEL, logs one line (agent-factory-hcql, is2h)
+  # Order: System 1 class model > MODEL_<ROLE> > MODEL_MEDIUM > role tier default.
+  local id=$1 class="" m errtmp reason ckey tried=""
+  if [ "${SYSTEM1_ENABLED:-}" != 1 ]; then
+    tried="system1 disabled"
+  elif [ -z "${MODEL_HIGH:-}${MODEL_MEDIUM:-}${MODEL_LOW:-}" ]; then
+    tried="no class models set"
+  else
     errtmp=$(mktemp)
     if class=$( cd "$REPO" 2>/dev/null; "$KIT_DIR/bin/system1-class.sh" "$id" 2>"$errtmp" ) && [ -n "$class" ]; then
-      src=system1
+      ckey="MODEL_${class^^}"; m="${!ckey:-}"
+      if [ -n "$m" ]; then
+        rm -f "$errtmp"
+        SESSION_MODEL=$m; log "model: $id source=system1 class=$class model=$m"; return 0
+      fi
+      tried="system1 class=$class but $ckey empty"
     else
-      reason=$(one_line "$(head -c 300 "$errtmp")"); class=medium; src="fallback(${reason:-no reason})"
+      reason=$(one_line "$(head -c 300 "$errtmp")"); tried="system1 failed: ${reason:-no reason}"
     fi
     rm -f "$errtmp"
-  else
-    class=medium; src="fallback(system1 disabled)"
   fi
-  ckey="MODEL_${class^^}"; m="${!ckey:-}"
-  if [ -n "$m" ]; then
-    SESSION_MODEL=$m; log "model: $id class=$class source=$src model=$m"
+  if [ "$MODEL_PINNED" = 1 ]; then
+    SESSION_MODEL=$MODEL; log "model: $id source=MODEL_<ROLE> ($model_var) model=$MODEL fallback=($tried)"
+  elif [ -n "${MODEL_MEDIUM:-}" ]; then
+    SESSION_MODEL=$MODEL_MEDIUM; log "model: $id source=MODEL_MEDIUM model=$MODEL_MEDIUM fallback=($tried)"
   else
-    SESSION_MODEL=$MODEL; log "model: $id class=$class source=$src model=<default: ${MODEL:-harness default}> ($ckey empty, using role default)"
+    SESSION_MODEL=$ROLE_DEFAULT_MODEL; log "model: $id source=role-default model=${ROLE_DEFAULT_MODEL:-<harness default>} fallback=($tried)"
   fi
 }
 run_agent() {  # sets LAST_RUN_QUOTA_MSG
