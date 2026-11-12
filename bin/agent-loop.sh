@@ -540,7 +540,15 @@ if [ "$PREFLIGHT" = 1 ]; then
 fi
 
 release_stale
-log "started: role=$ROLE harness=$HARNESS model=${MODEL:-<harness default>} max_turns=$MAX_TURNS timeout=$ITERATION_TIMEOUT"
+# Under System 1 the team lead never starts a harness session (see run_agent); report what runs.
+if [ "$ROLE" = team-lead ] && [ "${SYSTEM1_ENABLED:-}" = 1 ]; then
+  start_harness=system1
+  start_model="${SYSTEM1_MODEL:-ggml-org/vllm-d3-mini-GGUF}" # same default as system1.sh
+else
+  start_harness=$HARNESS
+  start_model=${MODEL:-<harness default>}
+fi
+log "started: role=$ROLE harness=$start_harness model=$start_model max_turns=$MAX_TURNS timeout=$ITERATION_TIMEOUT"
 
 # ---------- main loop ----------
 fails=0
