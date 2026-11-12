@@ -35,9 +35,9 @@ any failure labels the issue `needs-human`. See
 
 Since `agent-factory-hcql`, System 1 also makes a second kind of decision for every role's issue session:
 `bin/agent-loop.sh`'s `choose_model` asks `bin/system1-class.sh` to classify the claimed issue as
-`high|medium|low` and runs the session with `MODEL_HIGH|MODEL_MEDIUM|MODEL_LOW`. Failure or System 1
-being off falls back to `MODEL_MEDIUM`; an empty class model falls back to the role default; an explicit
-`MODEL_<ROLE>` wins and skips the request. The classifier never labels issues and uses the same `/v1/systemone` endpoint. See
+`high|medium|low` and runs the session with `MODEL_HIGH|MODEL_MEDIUM|MODEL_LOW`. Since `agent-factory-is2h`
+the model order is: System 1's class model (when enabled and the class variable is set) > `MODEL_<ROLE>` >
+`MODEL_MEDIUM` > the role's tier default; a role pin applies only when System 1 gives no usable model. The classifier never labels issues and uses the same `/v1/systemone` endpoint. See
 `docs/design/agent-factory-hcql.md`.
 
 ## Stack
