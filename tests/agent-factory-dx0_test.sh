@@ -27,6 +27,8 @@
 #
 # Run directly: bash tests/agent-factory-dx0_test.sh
 set -uo pipefail
+# Hermetic: the operator's System 1 settings (SYSTEM1_*) must not leak in and reroute team-lead (agent-factory-zkbh)
+unset SYSTEM1_ENABLED SYSTEM1_LOCAL SYSTEM1_URL SYSTEM1_MODEL SYSTEM1_API_KEY SYSTEM1_TIMEOUT
 
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$KIT_DIR"
