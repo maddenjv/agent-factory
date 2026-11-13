@@ -30,7 +30,7 @@ case "$1" in
   run)
     [ "${DOCKER_FAIL_RUN:-}" = 1 ] && { echo "Error: simulated docker run failure" >&2; exit 1; }
     m=""; while [ $# -gt 0 ]; do [ "$1" = -hf ] && m=$2; shift; done; echo "$m" > "$DSTATE/c"; exit 0 ;;
-  inspect) [ -s "$DSTATE/c" ] && { echo "true|-hf $(cat "$DSTATE/c") --host 0.0.0.0 --port 8080"; exit 0; }
+  inspect) [ -s "$DSTATE/c" ] && { echo "true|-hf $(cat "$DSTATE/c") --host 0.0.0.0 --port 8080 -c 8192 -b 4096 -ub 4096"; exit 0; }
     echo "Error: No such object" >&2; exit 1 ;;
   rm) rm -f "$DSTATE/c"; exit 0 ;;
   compose)
