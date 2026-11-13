@@ -107,6 +107,7 @@ if [ "$(s1_val SYSTEM1_ENABLED)" = 1 ] && [ "$(s1_val SYSTEM1_LOCAL)" = 1 ]; the
     start) echo "Starting existing System 1 container $S1_NAME..."
       docker start "$S1_NAME" >/dev/null || s1_fail "docker start $S1_NAME" ;;
     run) echo "Starting System 1 llama.cpp container $S1_NAME ($s1_model); first start downloads the model."
+      # shellcheck disable=SC2086  # S1_OPTS is deliberately word-split
       docker run -d --name "$S1_NAME" --restart unless-stopped --gpus all -p 8080:8080 \
         -v "$HOME/.cache/llama.cpp:/root/.cache/llama.cpp" "$S1_IMAGE" \
         -hf "$s1_model" --host 0.0.0.0 --port 8080 $S1_OPTS >/dev/null || s1_fail "docker run $S1_IMAGE" ;;
