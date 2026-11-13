@@ -176,8 +176,8 @@ answers an invalid class, or the chosen class variable is empty. Each choice is 
 
 **Local:** needs Docker and an NVIDIA GPU with nvidia-container-toolkit. Set `SYSTEM1_ENABLED=1` and
 `SYSTEM1_LOCAL=1` and run `bin/init.sh`: it starts (or reuses) the `factory-s1-llama` container
-(`ghcr.io/ggml-org/llama.cpp:server-cuda`, `-hf $SYSTEM1_MODEL`, port 8080, model cache in
-`~/.cache/llama.cpp`); re-running is safe. The first start downloads the model - follow it with
+(`ghcr.io/ggml-org/llama.cpp:server-cuda`, `-hf $SYSTEM1_MODEL`, context size 8192 (`-c 8192`), batch and micro-batch size 4096 (`-b 4096 -ub 4096`), port 8080, model cache in
+`~/.cache/llama.cpp`); re-running is safe; an existing container whose model or these settings differ is recreated. The first start downloads the model - follow it with
 `docker logs -f factory-s1-llama`. With the flag unset no container is started. The model answers typed
 multiple-choice questions via `POST /v1/systemone`, so decision notes show the chosen option and its
 confidence rather than prose.

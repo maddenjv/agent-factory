@@ -72,10 +72,11 @@ else
 fi
 
 # System 1 (agent-factory-y330): with SYSTEM1_ENABLED=1 and SYSTEM1_LOCAL=1, start (or reuse) a llama.cpp
-# server container that serves the model for POST /v1/systemone. Anything else makes no docker call.
+# server container (fixed -c/-b/-ub, agent-factory-w1mo) that serves the model for POST /v1/systemone. Anything else makes no docker call.
 s1_val() { grep -E "^$1=" "$AGENT_ENV_FILE" | tail -1 | cut -d= -f2- | sed -E 's/^["'"'"']|["'"'"']$//g'; }
 if [ "$(s1_val SYSTEM1_ENABLED)" = 1 ] && [ "$(s1_val SYSTEM1_LOCAL)" = 1 ]; then
   S1_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda; S1_NAME=factory-s1-llama
+  S1_OPTS="-c 8192 -b 4096 -ub 4096"   # llama.cpp context / batch / micro-batch (agent-factory-w1mo)
   s1_model="$(s1_val SYSTEM1_MODEL)"; s1_model="${s1_model:-ggml-org/vllm-d3-mini-GGUF}"
   command -v docker >/dev/null 2>&1 || { echo "error: SYSTEM1_LOCAL=1 needs docker to run the llama.cpp server container ($S1_IMAGE), but 'docker' was not found." >&2; exit 1; }
   s1_fail() { echo "error: llama.cpp System 1 container: $1 failed (needs an NVIDIA GPU + nvidia-container-toolkit for --gpus all)" >&2; exit 1; }
@@ -84,24 +85,32 @@ if [ "$(s1_val SYSTEM1_ENABLED)" = 1 ] && [ "$(s1_val SYSTEM1_LOCAL)" = 1 ]; the
   s1_args=""; [ -z "$s1_state" ] || s1_args=$(docker inspect -f '{{join .Args " "}}' "$S1_NAME" 2>/dev/null) || s1_args=""
   s1_start=run
   if [ -n "$s1_state" ]; then
-    # recreate only if the container's -hf model demonstrably differs
-    if [[ "$s1_args" != *-hf* || "$s1_args" == *"$s1_model"* ]]; then
-      if [ "$s1_state" = true ]; then
-        echo "Reusing running System 1 container $S1_NAME ($s1_model)."; s1_start=none
-      else
-        s1_start=start
+    # recreate only on a demonstrable difference (model, then settings); unreadable args count as matching
+    s1_recreate=""
+    if [[ "$s1_args" == *-hf* ]]; then
+      if [[ "$s1_args" != *"$s1_model"* ]]; then
+        s1_recreate="for model $s1_model"
+      elif [[ " $s1_args " != *" $S1_OPTS "* ]]; then
+        s1_recreate="for new settings ($S1_OPTS)"
       fi
-    else
+    fi
+    if [ -n "$s1_recreate" ]; then
+      echo "Recreating System 1 container $S1_NAME $s1_recreate."
       docker rm -f "$S1_NAME" >/dev/null || s1_fail "docker rm -f $S1_NAME"
+    elif [ "$s1_state" = true ]; then
+      echo "Reusing running System 1 container $S1_NAME ($s1_model)."; s1_start=none
+    else
+      s1_start=start
     fi
   fi
   case "$s1_start" in
     start) echo "Starting existing System 1 container $S1_NAME..."
       docker start "$S1_NAME" >/dev/null || s1_fail "docker start $S1_NAME" ;;
     run) echo "Starting System 1 llama.cpp container $S1_NAME ($s1_model); first start downloads the model."
+      # shellcheck disable=SC2086  # S1_OPTS is deliberately word-split
       docker run -d --name "$S1_NAME" --restart unless-stopped --gpus all -p 8080:8080 \
         -v "$HOME/.cache/llama.cpp:/root/.cache/llama.cpp" "$S1_IMAGE" \
-        -hf "$s1_model" --host 0.0.0.0 --port 8080 >/dev/null || s1_fail "docker run $S1_IMAGE" ;;
+        -hf "$s1_model" --host 0.0.0.0 --port 8080 $S1_OPTS >/dev/null || s1_fail "docker run $S1_IMAGE" ;;
   esac
   [ "$s1_start" = none ] || echo "Follow model download/startup with: docker logs -f $S1_NAME"
 fi
